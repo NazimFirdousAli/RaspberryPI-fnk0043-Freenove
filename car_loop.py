@@ -14,10 +14,10 @@ MAX_SPEED = 4000
 KEY_VECTORS = {
     "w": ( SPEED,  SPEED,  SPEED,  SPEED),
     "s": (-SPEED, -SPEED, -SPEED, -SPEED),
-    "q": (-SPEED,  SPEED,  SPEED, -SPEED),
-    "e": ( SPEED, -SPEED, -SPEED,  SPEED),
-    "a": (-SPEED, -SPEED,  SPEED,  SPEED),
-    "d": ( SPEED,  SPEED, -SPEED, -SPEED),
+    "a": (-SPEED,  SPEED,  SPEED, -SPEED),
+    "d": ( SPEED, -SPEED, -SPEED,  SPEED),
+    "q": (-SPEED, -SPEED,  SPEED,  SPEED),
+    "e": ( SPEED,  SPEED, -SPEED, -SPEED),
 }
 
 
