@@ -14,6 +14,7 @@ class VideoReceiver:
         self.lock = threading.Lock()
         self.running = False
         self.thread = None
+        self.camera = Camera(stream_size=(640, 480))
 
     def start(self):
         self.running = True
