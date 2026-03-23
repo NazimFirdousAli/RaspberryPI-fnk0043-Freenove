@@ -7,8 +7,15 @@ from shared.topics import SYSTEM_MODE
 MANUAL = "manual"
 AUTO = "auto"
 
-SPEED = 1500
+SPEED = 1000
 MAX_SPEED = 4000
+
+# Servo settings
+PAN_CENTER  = 90
+TILT_CENTER = 90
+SERVO_MIN   = 0
+SERVO_MAX   = 180
+SERVO_STEP  = 5  # degrees per key press
 
 # Each key maps to (FL, BL, FR, BR)
 KEY_VECTORS = {
@@ -41,6 +48,10 @@ class CarLoop:
         self.previous_mode = None
         self.current_keys = []
 
+        # Servo state
+        self.pan  = PAN_CENTER
+        self.tilt = TILT_CENTER
+
         self.client = CarClient(
             car_id=car_id,
             broker_host=broker_host,
@@ -51,11 +62,20 @@ class CarLoop:
     def handle_message(self, topic: str, payload: dict):
         if topic == self.client.cmd_topic:
             self.current_keys = payload.get("keys", [])
+        elif topic == self.client.servo_topic:
+            self.pan  = payload.get("pan",  self.pan)
+            self.tilt = payload.get("tilt", self.tilt)
         elif topic == SYSTEM_MODE:
             self.current_mode = payload.get("mode", MANUAL)
 
     def stop_motors(self):
         self.car.motor.set_motor_model(0, 0, 0, 0)
+
+    def center_servos(self):
+        self.pan  = PAN_CENTER
+        self.tilt = TILT_CENTER
+        self.car.servo.set_servo_pwm('0', self.pan)
+        self.car.servo.set_servo_pwm('1', self.tilt)
 
     def run(self):
         try:
@@ -67,8 +87,15 @@ class CarLoop:
                     self.previous_mode = self.current_mode
 
                 if self.current_mode == MANUAL:
+
+                    # Movement
                     FL, BL, FR, BR = compute_motor_vector(self.current_keys)
                     self.car.motor.set_motor_model(FL, BL, FR, BR)
+
+                    # Servos
+                    self.car.servo.set_servo_pwm('0', self.pan)
+                    self.car.servo.set_servo_pwm('1', self.tilt)
+
 
                 elif self.current_mode == AUTO:
                     pass  # later
@@ -79,6 +106,7 @@ class CarLoop:
             print("\nShutting down...")
         finally:
             self.stop_motors()
+            self.center_servos()
             self.car.close()
 
 if __name__ == "__main__":

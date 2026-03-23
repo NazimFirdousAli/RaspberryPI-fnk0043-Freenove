@@ -6,6 +6,10 @@ FOLLOWER_STATE = "cars/follower/state"
 LEADER_CMD = "cars/leader/cmd"
 FOLLOWER_CMD = "cars/follower/cmd"
 
+# Servo commands
+LEADER_SERVO = "cars/leader/servo"
+FOLLOWER_SERVO = "cars/follower/servo"
+
 # System wide
 SYSTEM_MODE = "system/mode"           # "manual" or "autonomous"
 MANUAL_TARGET = "system/manual/target" # "leader" or "follower"

@@ -6,6 +6,13 @@ def make_command(keys: set) -> dict:
         "keys": list(keys)  # sets aren't JSON serializable, so we convert to list
     }
 
+def make_servo(pan: int, tilt: int) -> dict:
+    return {
+        "timestamp": time.time(),
+        "pan": pan,
+        "tilt": tilt
+    }
+
 def make_state(speed: float, heading: float, mode: str) -> dict:
     return {
         "timestamp": time.time(),

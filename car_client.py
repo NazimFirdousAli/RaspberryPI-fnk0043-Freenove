@@ -11,6 +11,8 @@ class CarClient:
 
         self.cmd_topic   = LEADER_CMD   if car_id == "leader" else FOLLOWER_CMD
         self.state_topic = LEADER_STATE if car_id == "leader" else FOLLOWER_STATE
+        self.servo_topic = LEADER_SERVO if car_id == "leader" else FOLLOWER_SERVO
+
 
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.client.on_connect = self._on_connect
@@ -23,6 +25,7 @@ class CarClient:
     def _on_connect(self, client, userdata, flags, reason_code, properties):
         print(f"[{self.car_id}] Connected to broker")
         self.client.subscribe(self.cmd_topic, qos=0)
+        self.client.subscribe(self.servo_topic, qos=0)
         self.client.subscribe(SYSTEM_MODE, qos=1)
 
     def _on_message(self, client, userdata, message):
