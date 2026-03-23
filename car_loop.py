@@ -3,6 +3,7 @@ import sys
 from car import Car
 from car_client import CarClient
 from shared.topics import SYSTEM_MODE
+from video_streamer import VideoStreamer
 
 MANUAL = "manual"
 AUTO = "auto"
@@ -54,6 +55,11 @@ class CarLoop:
         self.current_mode = MANUAL
         self.previous_mode = None
         self.current_keys = []
+
+        #Video Feed Streamer
+        self.streamer = VideoStreamer()
+        self.streamer.start()
+
 
         # Servo state
         self.pan  = PAN_CENTER
@@ -116,6 +122,7 @@ class CarLoop:
             self.stop_motors()
             self.center_servos()
             self.car.close()
+            self.streamer.stop()
 
 if __name__ == "__main__":
     car_id = sys.argv[1] if len(sys.argv) > 1 else "leader"
