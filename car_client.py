@@ -1,7 +1,7 @@
 import json
 import threading
 import paho.mqtt.client as mqtt
-from shared.topics import LEADER_CMD, FOLLOWER_CMD, LEADER_STATE, FOLLOWER_STATE, SYSTEM_MODE
+from shared.topics import LEADER_CMD, FOLLOWER_CMD, LEADER_STATE, FOLLOWER_STATE, LEADER_SERVO, FOLLOWER_SERVO, SYSTEM_MODE
 from shared.payloads import make_state
 
 class CarClient:

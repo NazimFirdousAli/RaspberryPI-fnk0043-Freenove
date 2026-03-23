@@ -7,8 +7,9 @@ import json
 import threading
 import pygame
 import paho.mqtt.client as mqtt
-from shared.topics import LEADER_CMD, FOLLOWER_CMD, MANUAL_TARGET, LEADER_SERVO, FOLLOWER_SERVO
 from shared.payloads import make_command, make_servo
+
+from shared.topics import LEADER_CMD, FOLLOWER_CMD, LEADER_STATE, FOLLOWER_STATE, LEADER_SERVO, FOLLOWER_SERVO, SYSTEM_MODE, MANUAL_TARGET
 
 VALID_KEYS = {
     pygame.K_w: "w",
@@ -20,16 +21,19 @@ VALID_KEYS = {
 }
 
 # Servo settings
-PAN_CENTER  = 90
-TILT_CENTER = 90
-SERVO_MIN   = 0
-SERVO_MAX   = 180
+PAN_CENTER  = 60
+TILT_CENTER = 0
+PAN_MIN     = 0
+PAN_MAX     = 120
+TILT_MIN    = 0
+TILT_MAX    = 180
 SERVO_STEP  = 5
 
 class ManualController:
     def __init__(self, broker_host: str):
         self.broker_host = broker_host
         self.pressed_keys = set()
+        self.servo_keys = set()
         self.target = "leader"
         self.running = True
 
@@ -62,8 +66,11 @@ class ManualController:
         payload = make_servo(self.pan, self.tilt)
         self.client.publish(self._get_servo_topic(), json.dumps(payload), qos=0)
 
-    def _clamp_servo(self, val):
-        return max(SERVO_MIN, min(SERVO_MAX, val))
+    def _clamp_pan(self, val):
+        return max(PAN_MIN, min(PAN_MAX, val))
+
+    def _clamp_tilt(self, val):
+        return max(TILT_MIN, min(TILT_MAX, val))
 
     def _draw(self, screen, font):
         screen.fill((30, 30, 30))
@@ -98,18 +105,8 @@ class ManualController:
                     if event.key in VALID_KEYS:
                         self.pressed_keys.add(VALID_KEYS[event.key])
                         self._publish_keys()
-                    elif event.key == pygame.K_LEFT:
-                        self.pan = self._clamp_servo(self.pan - SERVO_STEP)
-                        self._publish_servo()
-                    elif event.key == pygame.K_RIGHT:
-                        self.pan = self._clamp_servo(self.pan + SERVO_STEP)
-                        self._publish_servo()
-                    elif event.key == pygame.K_UP:
-                        self.tilt = self._clamp_servo(self.tilt + SERVO_STEP)
-                        self._publish_servo()
-                    elif event.key == pygame.K_DOWN:
-                        self.tilt = self._clamp_servo(self.tilt - SERVO_STEP)
-                        self._publish_servo()
+                    elif event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN):
+                        self.servo_keys.add(event.key)
                     elif event.key == pygame.K_TAB:
                         self.target = "follower" if self.target == "leader" else "leader"
                         self.client.publish(MANUAL_TARGET, json.dumps({"target": self.target}), qos=1)
@@ -120,6 +117,25 @@ class ManualController:
                     if event.key in VALID_KEYS:
                         self.pressed_keys.discard(VALID_KEYS[event.key])
                         self._publish_keys()
+                    elif event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN):
+                        self.servo_keys.discard(event.key)
+            
+            # Handle held servo keys
+            servo_moved = False
+            if pygame.K_LEFT in self.servo_keys:
+                self.pan = self._clamp_pan(self.pan - SERVO_STEP)
+                servo_moved = True
+            if pygame.K_RIGHT in self.servo_keys:
+                self.pan = self._clamp_pan(self.pan + SERVO_STEP)
+                servo_moved = True
+            if pygame.K_UP in self.servo_keys:
+                self.tilt = self._clamp_tilt(self.tilt + SERVO_STEP)
+                servo_moved = True
+            if pygame.K_DOWN in self.servo_keys:
+                self.tilt = self._clamp_tilt(self.tilt - SERVO_STEP)
+                servo_moved = True
+            if servo_moved:
+                self._publish_servo()
 
             self._publish_keys()
             self._draw(screen, font)

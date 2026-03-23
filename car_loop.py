@@ -11,11 +11,13 @@ SPEED = 1000
 MAX_SPEED = 4000
 
 # Servo settings
-PAN_CENTER  = 90
-TILT_CENTER = 90
-SERVO_MIN   = 0
-SERVO_MAX   = 180
-SERVO_STEP  = 5  # degrees per key press
+PAN_CENTER  = 60
+TILT_CENTER = 0
+PAN_MIN     = 0
+PAN_MAX     = 120
+TILT_MIN    = 0
+TILT_MAX    = 180
+SERVO_STEP  = 5
 
 # Each key maps to (FL, BL, FR, BR)
 KEY_VECTORS = {
@@ -27,6 +29,11 @@ KEY_VECTORS = {
     "e": ( SPEED,  SPEED, -SPEED, -SPEED),
 }
 
+def center_servos(self):
+    self.pan  = 60
+    self.tilt = 0
+    self.car.servo.set_servo_pwm('0', self.pan)
+    self.car.servo.set_servo_pwm('1', self.tilt)
 
 def compute_motor_vector(keys: list) -> tuple:
     FL, BL, FR, BR = 0, 0, 0, 0
@@ -60,6 +67,7 @@ class CarLoop:
         print(f"[{car_id}] Car loop started in {self.current_mode} mode...")
 
     def handle_message(self, topic: str, payload: dict):
+        print(f"[message] {topic}: {payload}")  # add this line
         if topic == self.client.cmd_topic:
             self.current_keys = payload.get("keys", [])
         elif topic == self.client.servo_topic:
