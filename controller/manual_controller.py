@@ -3,6 +3,11 @@ import json
 import threading
 import pygame
 import paho.mqtt.client as mqtt
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from shared.topics import LEADER_CMD, FOLLOWER_CMD, MANUAL_TARGET, SYSTEM_MODE
 from shared.payloads import make_command
 
