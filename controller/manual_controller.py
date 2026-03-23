@@ -8,7 +8,7 @@ import threading
 import pygame
 import paho.mqtt.client as mqtt
 from shared.payloads import make_command, make_servo
-
+from video_receiver import VideoReceiver
 from shared.topics import LEADER_CMD, FOLLOWER_CMD, LEADER_STATE, FOLLOWER_STATE, LEADER_SERVO, FOLLOWER_SERVO, SYSTEM_MODE, MANUAL_TARGET
 
 VALID_KEYS = {
@@ -30,12 +30,15 @@ TILT_MAX    = 180
 SERVO_STEP  = 5
 
 class ManualController:
-    def __init__(self, broker_host: str):
+    def __init__(self, broker_host: str, pi_host: str):
         self.broker_host = broker_host
         self.pressed_keys = set()
         self.servo_keys = set()
         self.target = "leader"
         self.running = True
+
+        self.video = VideoReceiver(host=pi_host)
+        self.video.start()
 
         # Servo state
         self.pan  = PAN_CENTER
@@ -72,26 +75,32 @@ class ManualController:
     def _clamp_tilt(self, val):
         return max(TILT_MIN, min(TILT_MAX, val))
 
-    def _draw(self, screen, font):
-        screen.fill((30, 30, 30))
+def _draw(self, screen, font):
+    screen.fill((30, 30, 30))
 
-        title    = font.render("Freenove Manual Controller", True, (255, 255, 255))
-        target   = font.render(f"Target: {self.target}", True, (0, 255, 100))
-        keys     = font.render(f"Keys: {sorted(self.pressed_keys)}", True, (255, 255, 0))
-        servo    = font.render(f"Servo — Pan: {self.pan}°  Tilt: {self.tilt}°", True, (100, 200, 255))
-        controls = font.render("WASD/QE: move  |  Arrows: servo  |  TAB: switch  |  ESC: quit", True, (180, 180, 180))
+    # Draw video feed if available
+    frame = self.video.get_surface()
+    if frame is not None:
+        screen.blit(frame, (0, 0))  # top left
 
-        screen.blit(title,    (20, 20))
-        screen.blit(target,   (20, 60))
-        screen.blit(keys,     (20, 100))
-        screen.blit(servo,    (20, 140))
-        screen.blit(controls, (20, 190))
+    # Draw HUD on top of video
+    title    = font.render("Freenove Manual Controller", True, (255, 255, 255))
+    target   = font.render(f"Target: {self.target}", True, (0, 255, 100))
+    keys     = font.render(f"Keys: {sorted(self.pressed_keys)}", True, (255, 255, 0))
+    servo    = font.render(f"Servo — Pan: {self.pan}°  Tilt: {self.tilt}°", True, (100, 200, 255))
+    controls = font.render("WASD/QE: move  |  Arrows: servo  |  TAB: switch  |  ESC: quit", True, (180, 180, 180))
 
-        pygame.display.flip()
+    screen.blit(title,    (20, 20))
+    screen.blit(target,   (20, 60))
+    screen.blit(keys,     (20, 100))
+    screen.blit(servo,    (20, 140))
+    screen.blit(controls, (20, 190))
+
+    pygame.display.flip()
 
     def start(self):
         pygame.init()
-        screen = pygame.display.set_mode((560, 230))
+        screen = pygame.display.set_mode((400, 300))
         pygame.display.set_caption("Manual Controller")
         font = pygame.font.SysFont("monospace", 18)
         clock = pygame.time.Clock()
@@ -149,5 +158,6 @@ class ManualController:
 
 if __name__ == "__main__":
     broker_host = sys.argv[1] if len(sys.argv) > 1 else "localhost"
-    controller = ManualController(broker_host=broker_host)
+    pi_host = sys.argv[2] if len(sys.argv) > 2 else "10.56.45.66"
+    controller = ManualController(broker_host=broker_host, pi_host=pi_host)
     controller.start()

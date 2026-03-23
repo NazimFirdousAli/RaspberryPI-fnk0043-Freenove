@@ -1,3 +1,5 @@
 paho-mqtt
 pygame
 pynput
+opencv-python
+numpy

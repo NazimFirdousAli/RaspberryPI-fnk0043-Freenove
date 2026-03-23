@@ -58,3 +58,13 @@ class VideoStreamer:
             print(f"[video] Client disconnected: {e}")
         finally:
             conn.close()
+
+if __name__ == "__main__":
+    import time
+    streamer = VideoStreamer()
+    streamer.start()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        streamer.stop()
