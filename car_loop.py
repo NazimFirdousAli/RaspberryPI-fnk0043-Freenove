@@ -3,6 +3,7 @@ import sys
 from car import Car
 from car_client import CarClient
 from shared.topics import SYSTEM_MODE
+from buzzer import Buzzer
 
 MANUAL = "manual"
 AUTO = "auto"
@@ -59,6 +60,8 @@ class CarLoop:
         self.pan  = PAN_CENTER
         self.tilt = TILT_CENTER
 
+        self.buzzer = Buzzer()
+
         self.client = CarClient(
             car_id=car_id,
             broker_host=broker_host,
@@ -73,6 +76,8 @@ class CarLoop:
         elif topic == self.client.servo_topic:
             self.pan  = payload.get("pan",  self.pan)
             self.tilt = payload.get("tilt", self.tilt)
+        elif topic == self.client.buzzer_topic:
+            self.buzzer.set_state(payload.get("state", False))
         elif topic == SYSTEM_MODE:
             self.current_mode = payload.get("mode", MANUAL)
 
@@ -116,6 +121,8 @@ class CarLoop:
             self.stop_motors()
             self.center_servos()
             self.car.close()
+            self.buzzer.set_state(False)
+            self.buzzer.close()
 
 if __name__ == "__main__":
     car_id = sys.argv[1] if len(sys.argv) > 1 else "leader"

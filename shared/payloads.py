@@ -13,6 +13,12 @@ def make_servo(pan: int, tilt: int) -> dict:
         "tilt": tilt
     }
 
+def make_buzzer(state: bool) -> dict:
+    return {
+        "timestamp": time.time(),
+        "state": state
+    }
+
 def make_state(speed: float, heading: float, mode: str) -> dict:
     return {
         "timestamp": time.time(),

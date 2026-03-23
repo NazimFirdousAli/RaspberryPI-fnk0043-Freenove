@@ -7,9 +7,9 @@ import json
 import threading
 import pygame
 import paho.mqtt.client as mqtt
-from shared.payloads import make_command, make_servo
+from shared.payloads import make_command, make_servo, make_buzzer
 from video_receiver import VideoReceiver
-from shared.topics import LEADER_CMD, FOLLOWER_CMD, LEADER_STATE, FOLLOWER_STATE, LEADER_SERVO, FOLLOWER_SERVO, SYSTEM_MODE, MANUAL_TARGET
+from shared.topics import LEADER_CMD, FOLLOWER_CMD, LEADER_STATE, FOLLOWER_STATE, LEADER_SERVO, FOLLOWER_SERVO, SYSTEM_MODE, MANUAL_TARGET, LEADER_BUZZER, FOLLOWER_BUZZER
 
 VALID_KEYS = {
     pygame.K_w: "w",
@@ -89,7 +89,7 @@ class ManualController:
         target   = font.render(f"Target: {self.target}", True, (0, 255, 100))
         keys     = font.render(f"Keys: {sorted(self.pressed_keys)}", True, (255, 255, 0))
         servo    = font.render(f"Servo — Pan: {self.pan}°  Tilt: {self.tilt}°", True, (100, 200, 255))
-        controls = font.render("WASD/QE: move  |  Arrows: servo  |  TAB: switch  |  ESC: quit", True, (180, 180, 180))
+        controls = font.render("WASD/QE: move  |  Arrows: servo  |  SPACE: horn  |  TAB: switch  |  ESC: quit", True, (180, 180, 180))
 
         screen.blit(title,    (20, 20))
         screen.blit(target,   (20, 60))
@@ -98,6 +98,13 @@ class ManualController:
         screen.blit(controls, (20, 190))
 
         pygame.display.flip()
+
+    def _get_buzzer_topic(self):
+        return LEADER_BUZZER if self.target == "leader" else FOLLOWER_BUZZER
+
+    def _publish_buzzer(self, state: bool):
+        payload = make_buzzer(state)
+        self.client.publish(self._get_buzzer_topic(), json.dumps(payload), qos=0)
 
     def start(self):
         pygame.init()
@@ -117,6 +124,8 @@ class ManualController:
                         self._publish_keys()
                     elif event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN):
                         self.servo_keys.add(event.key)
+                    elif event.key == pygame.K_SPACE:
+                        self._publish_buzzer(True)
                     elif event.key == pygame.K_TAB:
                         self.target = "follower" if self.target == "leader" else "leader"
                         self.client.publish(MANUAL_TARGET, json.dumps({"target": self.target}), qos=1)
@@ -127,6 +136,8 @@ class ManualController:
                     if event.key in VALID_KEYS:
                         self.pressed_keys.discard(VALID_KEYS[event.key])
                         self._publish_keys()
+                    elif event.key == pygame.K_SPACE:
+                        self._publish_buzzer(False)
                     elif event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN):
                         self.servo_keys.discard(event.key)
             

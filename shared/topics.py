@@ -10,6 +10,10 @@ FOLLOWER_CMD = "cars/follower/cmd"
 LEADER_SERVO = "cars/leader/servo"
 FOLLOWER_SERVO = "cars/follower/servo"
 
+# Buzzer
+LEADER_BUZZER = "cars/leader/buzzer"
+FOLLOWER_BUZZER = "cars/follower/buzzer"
+
 # System wide
 SYSTEM_MODE = "system/mode"           # "manual" or "autonomous"
 MANUAL_TARGET = "system/manual/target" # "leader" or "follower"

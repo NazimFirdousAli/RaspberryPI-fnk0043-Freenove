@@ -1,7 +1,8 @@
 import json
 import threading
 import paho.mqtt.client as mqtt
-from shared.topics import LEADER_CMD, FOLLOWER_CMD, LEADER_STATE, FOLLOWER_STATE, LEADER_SERVO, FOLLOWER_SERVO, SYSTEM_MODE
+from shared.topics import LEADER_CMD, FOLLOWER_CMD, LEADER_STATE, FOLLOWER_STATE, LEADER_SERVO, FOLLOWER_SERVO, SYSTEM_MODE, LEADER_BUZZER, FOLLOWER_BUZZER
+
 from shared.payloads import make_state
 
 class CarClient:
@@ -13,6 +14,7 @@ class CarClient:
         self.state_topic = LEADER_STATE if car_id == "leader" else FOLLOWER_STATE
         self.servo_topic = LEADER_SERVO if car_id == "leader" else FOLLOWER_SERVO
 
+        self.buzzer_topic = LEADER_BUZZER if car_id == "leader" else FOLLOWER_BUZZER
 
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.client.on_connect = self._on_connect
@@ -27,6 +29,7 @@ class CarClient:
         self.client.subscribe(self.cmd_topic, qos=0)
         self.client.subscribe(self.servo_topic, qos=0)
         self.client.subscribe(SYSTEM_MODE, qos=1)
+        self.client.subscribe(self.buzzer_topic, qos=0)
 
     def _on_message(self, client, userdata, message):
         payload = json.loads(message.payload.decode())
