@@ -1,0 +1,33 @@
+While running:
+    
+    check mode (auto / manual)
+
+    receive input
+        (can be controls, switching modes or terminating)
+
+    map inputs to mode specific action
+
+    switch modes or terminate if input to do so is given
+
+    if manual mode
+
+        compute movement
+
+        execute movement
+
+        any video streaming
+
+    if auto mode
+
+        receive environment sensor input
+
+        compute sensor input
+
+        automation code
+        
+        compute movement auto
+
+        execute movement auto
+
+        any video streaming
+        
