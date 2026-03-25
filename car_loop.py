@@ -60,7 +60,7 @@ class CarLoop:
         self.pan  = PAN_CENTER
         self.tilt = TILT_CENTER
 
-        self.buzzer = Buzzer()
+        self.buzzer_state = False
 
         self.client = CarClient(
             car_id=car_id,
@@ -77,7 +77,7 @@ class CarLoop:
             self.pan  = payload.get("pan",  self.pan)
             self.tilt = payload.get("tilt", self.tilt)
         elif topic == self.client.buzzer_topic:
-            self.buzzer.set_state(payload.get("state", False))
+            self.buzzer_state = payload.get("state", False)
         elif topic == SYSTEM_MODE:
             self.current_mode = payload.get("mode", MANUAL)
 
@@ -108,6 +108,9 @@ class CarLoop:
                     # Servos
                     self.car.servo.set_servo_pwm('0', self.pan)
                     self.car.servo.set_servo_pwm('1', self.tilt)
+
+                     # Buzzer
+                    self.buzzer.set_state(self.buzzer_state)
 
 
                 elif self.current_mode == AUTO:
