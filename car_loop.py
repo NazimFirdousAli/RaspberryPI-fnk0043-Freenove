@@ -4,6 +4,7 @@ from car import Car
 from car_client import CarClient
 from shared.topics import SYSTEM_MODE
 from buzzer import Buzzer
+from odometry import Odometry
 
 MANUAL = "manual"
 AUTO = "auto"
@@ -65,6 +66,13 @@ class CarLoop:
         self.current_mode = MANUAL
         self.previous_mode = None
         self.current_keys = []
+
+        # Odometer State
+        self.odometry = Odometry()
+        self.current_FL = 0
+        self.current_BL = 0
+        self.current_FR = 0
+        self.current_BR = 0
 
         # Servo state
         self.pan  = PAN_CENTER
@@ -141,6 +149,7 @@ class CarLoop:
                     # Movement
                     FL, BL, FR, BR = compute_motor_vector(self.current_keys)
                     self.car.motor.set_motor_model(FL, BL, FR, BR)
+                    self.current_FL, self.current_BL, self.current_FR, self.current_BR = FL, BL, FR, BR
 
                     # Servos
                     self.car.servo.set_servo_pwm('0', self.pan)
@@ -173,6 +182,24 @@ class CarLoop:
                     elif self.auto_state == AUTO_STABILIZE:
                         if self._time_in_state() >= STABILIZE_DURATION:
                             self._set_auto_state(AUTO_FORWARD)
+
+                # Update odometry every iteration
+                self.odometry.update(
+                    self.current_FL,
+                    self.current_BL,
+                    self.current_FR,
+                    self.current_BR
+                )
+
+                # Publish state every iteration
+                pos = self.odometry.get_position()
+                self.client.publish_state(
+                    speed=self.current_FL,  # rough proxy for now
+                    heading=pos["heading"],
+                    mode=self.current_mode,
+                    x=pos["x"],
+                    y=pos["y"]
+                )
 
                 time.sleep(0.01)
 

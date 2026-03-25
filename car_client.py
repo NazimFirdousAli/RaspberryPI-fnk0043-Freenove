@@ -36,6 +36,6 @@ class CarClient:
         if self.on_message:
             self.on_message(message.topic, payload)
 
-    def publish_state(self, speed: float, heading: float, mode: str):
-        payload = make_state(speed, heading, mode)
+    def publish_state(self, speed: float, heading: float, mode: str, x: float = 0.0, y: float = 0.0):
+        payload = make_state(speed, heading, mode, x, y)
         self.client.publish(self.state_topic, json.dumps(payload), qos=0)
