@@ -3,7 +3,7 @@ import math
 from motor import Ordinary_Car
 from infrared import Infrared
 
-CALIB_SPEED = 1500  # motor value used during calibration
+CALIB_SPEED = 1000  # motor value used during calibration
 DEBOUNCE    = 0.3   # seconds to wait after a detection before looking again
 
 def wait_for_line(infrared, debounce=DEBOUNCE):

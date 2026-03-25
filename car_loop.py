@@ -13,8 +13,10 @@ AUTO = "auto"
 RETURN_HOME = "return_home"
 RETURN_HOME_TRACE = "return_home_trace"
 
-SPEED = 1500
+SPEED = 1000
 MAX_SPEED = 4000
+LEFT_SCALE  = 1.20  # start here and adjust
+RIGHT_SCALE = 1.0
 
 # Auto mode settings
 SAFE_DISTANCE      = 40.0
@@ -59,7 +61,12 @@ def compute_motor_vector(keys: list) -> tuple:
             FR += v[2]
             BR += v[3]
     clamp = lambda val: max(-MAX_SPEED, min(MAX_SPEED, val))
-    return clamp(FL), clamp(BL), clamp(FR), clamp(BR)
+    # Apply left/right scale correction
+    FL = clamp(int(FL * LEFT_SCALE))
+    BL = clamp(int(BL * LEFT_SCALE))
+    FR = clamp(int(FR * RIGHT_SCALE))
+    BR = clamp(int(BR * RIGHT_SCALE))
+    return FL, BL, FR, BR
 
 class CarLoop:
     def __init__(self, car_id: str, broker_host: str):
