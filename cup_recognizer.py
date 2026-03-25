@@ -436,20 +436,3 @@ if __name__ == "__main__":
         if args.vision_only and follower.car:
             follower.car = None   # disable motors
         follower.run()
-
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# To run this program 
-# Full mode (moves + talks)
-# python3 cup_recognizer.py
-
-# Vision only, no motors
-# python3 cup_recognizer.py --vision-only
-
-# Silence the voice
-# python3 cup_recognizer.py --no-voice
-
-# Interactive HSV slider tool to fine-tune colours
-# python3 cup_recognizer.py --calibrate
-# ══════════════════════════════════════════════════════════════════════════════
