@@ -14,7 +14,6 @@ class VideoReceiver:
         self.lock = threading.Lock()
         self.running = False
         self.thread = None
-        self.camera = Camera(stream_size=(640, 480))
 
     def start(self):
         self.running = True
@@ -24,7 +23,7 @@ class VideoReceiver:
 
     def stop(self):
         self.running = False
-
+__init__
     def _receive(self):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
