@@ -2,7 +2,7 @@ import time
 import math
 
 SPEED_SCALE    = 0.00065869
-ROTATION_SCALE = 0.00907474
+ROTATION_SCALE = (2 * 3.14159) / (1.73 * 1000) 
 
 class Odometry:
     def __init__(self):

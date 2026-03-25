@@ -7,7 +7,7 @@ TURN_SPEED            = 1400
 
 # How long a 180° rotation takes at TURN_SPEED
 # Replace this after running calibrate.py rotation test
-ROTATION_180_DURATION = 1.4  # placeholder — calibrate this!
+ROTATION_180_DURATION = 1.73 / 2  # = 0.865
 
 # States
 ROTATING_180 = "rotating_180"
@@ -47,9 +47,14 @@ class PathLogger:
 
     def _is_rotation(self, entry: dict) -> bool:
         """Returns True if this entry is primarily a rotation command."""
-        left_avg  = (entry["FL"] + entry["BL"]) / 2
-        right_avg = (entry["FR"] + entry["BR"]) / 2
-        return (left_avg > 0 and right_avg < 0) or (left_avg < 0 and right_avg > 0)
+        FL, BL, FR, BR = entry["FL"], entry["BL"], entry["FR"], entry["BR"]
+        # In a rotation, left wheels and right wheels spin in opposite directions
+        left_avg  = (FL + BL) / 2
+        right_avg = (FR + BR) / 2
+        # Check if left and right sides have opposite signs and are significant
+        if abs(left_avg) < 100 or abs(right_avg) < 100:
+            return False
+        return (left_avg > 0) != (right_avg > 0)
 
     def get_log(self) -> list:
         """

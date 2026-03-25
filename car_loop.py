@@ -123,12 +123,14 @@ class CarLoop:
     def set_motors(self, FL: int, BL: int, FR: int, BR: int):
         """Apply left/right scale correction and set motors."""
         clamp = lambda val: max(-MAX_SPEED, min(MAX_SPEED, val))
-        FL = clamp(int(FL * LEFT_SCALE))
-        BL = clamp(int(BL * LEFT_SCALE))
-        FR = clamp(int(FR * RIGHT_SCALE))
-        BR = clamp(int(BR * RIGHT_SCALE))
-        self.car.motor.set_motor_model(FL, BL, FR, BR)
+        # Store raw values for odometry
         self.current_FL, self.current_BL, self.current_FR, self.current_BR = FL, BL, FR, BR
+        # Apply correction for actual motor output
+        FL_corrected = clamp(int(FL * LEFT_SCALE))
+        BL_corrected = clamp(int(BL * LEFT_SCALE))
+        FR_corrected = clamp(int(FR * RIGHT_SCALE))
+        BR_corrected = clamp(int(BR * RIGHT_SCALE))
+        self.car.motor.set_motor_model(FL_corrected, BL_corrected, FR_corrected, BR_corrected)
 
     def stop_motors(self):
         self.set_motors(0, 0, 0, 0)

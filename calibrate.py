@@ -78,16 +78,36 @@ def calibrate_linear(motor, infrared):
 def calibrate_rotation(motor, infrared):
     print("\n--- ROTATION CALIBRATION ---")
     print("Place a single piece of tape on the ground under the middle sensor.")
+    print("Start the car OFF the tape line.")
     input("Press ENTER to start...")
 
     set_motors(motor, -CALIB_SPEED, -CALIB_SPEED, CALIB_SPEED, CALIB_SPEED)
 
-    print("Waiting for tape line (start)...")
-    wait_for_line(infrared)
+    # Wait for first detection (start counting)
+    print("Rotating... waiting for first tape crossing...")
+    while not _sustained_detection(infrared):
+        time.sleep(0.005)
     t_start = time.time()
-    print("Start detected! Waiting for one full revolution...")
+    print("First crossing detected! Counting...")
 
-    wait_for_line(infrared)
+    # Wait for sensor to clear
+    while infrared.read_one_infrared(2) == 1:
+        time.sleep(0.005)
+
+    # Wait for second detection (halfway — ignore)
+    print("Waiting for halfway crossing (ignoring)...")
+    while not _sustained_detection(infrared):
+        time.sleep(0.005)
+    print("Halfway detected, continuing...")
+
+    # Wait for sensor to clear again
+    while infrared.read_one_infrared(2) == 1:
+        time.sleep(0.005)
+
+    # Wait for third detection (full revolution)
+    print("Waiting for full revolution crossing...")
+    while not _sustained_detection(infrared):
+        time.sleep(0.005)
     t_end = time.time()
 
     set_motors(motor, 0, 0, 0, 0)
