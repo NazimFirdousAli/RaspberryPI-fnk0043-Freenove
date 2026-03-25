@@ -5,19 +5,23 @@ from car_client import CarClient
 from shared.topics import SYSTEM_MODE
 from buzzer import Buzzer
 from odometry import Odometry
+from return_home import ReturnHome
+from return_home_trace import ReturnHomeTrace, PathLogger
 
 MANUAL = "manual"
 AUTO = "auto"
+RETURN_HOME = "return_home"
+RETURN_HOME_TRACE = "return_home_trace"
 
 SPEED = 1500
 MAX_SPEED = 4000
 
 # Auto mode settings
-SAFE_DISTANCE     = 40.0
-SLOW_SPEED        = 700
-TURN_SPEED        = 1400
-BRAKE_DURATION    = 0.15
-TURN_DURATION     = 0.7
+SAFE_DISTANCE      = 40.0
+SLOW_SPEED         = 700
+TURN_SPEED         = 1400
+BRAKE_DURATION     = 0.15
+TURN_DURATION      = 0.7
 STABILIZE_DURATION = 0.2
 
 # Auto mode states
@@ -45,7 +49,6 @@ KEY_VECTORS = {
     "e": ( SPEED,  SPEED, -SPEED, -SPEED),
 }
 
-
 def compute_motor_vector(keys: list) -> tuple:
     FL, BL, FR, BR = 0, 0, 0, 0
     for key in keys:
@@ -65,9 +68,13 @@ class CarLoop:
         self.running = True
         self.current_mode = MANUAL
         self.previous_mode = None
+        self.return_home = None
         self.current_keys = []
 
-        # Odometer State
+        self.path_logger = PathLogger()
+        self.return_home_trace = None
+
+        # Odometry state
         self.odometry = Odometry()
         self.current_FL = 0
         self.current_BL = 0
@@ -109,6 +116,7 @@ class CarLoop:
 
     def stop_motors(self):
         self.car.motor.set_motor_model(0, 0, 0, 0)
+        self.current_FL = self.current_BL = self.current_FR = self.current_BR = 0
 
     def center_servos(self):
         self.pan  = PAN_CENTER
@@ -130,7 +138,6 @@ class CarLoop:
             if d is not None and d > 0:
                 readings.append(d)
         return sum(readings) / len(readings) if readings else None
-    
 
     def run(self):
         try:
@@ -141,14 +148,17 @@ class CarLoop:
                     print(f"[mode] {self.previous_mode} → {self.current_mode}")
                     self.stop_motors()
                     self.center_servos()
-                    self.auto_state = AUTO_FORWARD  # reset auto state on mode switch
+                    self.auto_state = AUTO_FORWARD
                     self.previous_mode = self.current_mode
+                    self.return_home = None
+                    self.return_home_trace = None
 
                 if self.current_mode == MANUAL:
 
                     # Movement
                     FL, BL, FR, BR = compute_motor_vector(self.current_keys)
                     self.car.motor.set_motor_model(FL, BL, FR, BR)
+                    self.path_logger.record(FL, BL, FR, BR)
                     self.current_FL, self.current_BL, self.current_FR, self.current_BR = FL, BL, FR, BR
 
                     # Servos
@@ -162,26 +172,68 @@ class CarLoop:
                     dist = self.get_accurate_distance()
 
                     if self.auto_state == AUTO_FORWARD:
-                        self.car.motor.set_motor_model(SLOW_SPEED, SLOW_SPEED, SLOW_SPEED, SLOW_SPEED)
+                        FL, BL, FR, BR = SLOW_SPEED, SLOW_SPEED, SLOW_SPEED, SLOW_SPEED
+                        self.car.motor.set_motor_model(FL, BL, FR, BR)
+                        self.path_logger.record(FL, BL, FR, BR)
+                        self.current_FL, self.current_BL, self.current_FR, self.current_BR = FL, BL, FR, BR
                         if dist is not None and dist < SAFE_DISTANCE:
                             print(f"Obstacle at {dist:.1f}cm!")
-                            self.car.motor.set_motor_model(-900, -900, -900, -900)
+                            FL, BL, FR, BR = -900, -900, -900, -900
+                            self.car.motor.set_motor_model(FL, BL, FR, BR)
+                            self.path_logger.record(FL, BL, FR, BR)
+                            self.current_FL, self.current_BL, self.current_FR, self.current_BR = FL, BL, FR, BR
                             self._set_auto_state(AUTO_BRAKING)
 
                     elif self.auto_state == AUTO_BRAKING:
                         if self._time_in_state() >= BRAKE_DURATION:
-                            self.car.motor.set_motor_model(0, 0, 0, 0)
-                            self.car.motor.set_motor_model(-TURN_SPEED, -TURN_SPEED, TURN_SPEED, TURN_SPEED)
+                            FL, BL, FR, BR = 0, 0, 0, 0
+                            self.car.motor.set_motor_model(FL, BL, FR, BR)
+                            self.path_logger.record(FL, BL, FR, BR)
+                            self.current_FL, self.current_BL, self.current_FR, self.current_BR = FL, BL, FR, BR
+                            FL, BL, FR, BR = -TURN_SPEED, -TURN_SPEED, TURN_SPEED, TURN_SPEED
+                            self.car.motor.set_motor_model(FL, BL, FR, BR)
+                            self.path_logger.record(FL, BL, FR, BR)
+                            self.current_FL, self.current_BL, self.current_FR, self.current_BR = FL, BL, FR, BR
                             self._set_auto_state(AUTO_TURNING)
 
                     elif self.auto_state == AUTO_TURNING:
                         if self._time_in_state() >= TURN_DURATION:
-                            self.car.motor.set_motor_model(0, 0, 0, 0)
+                            FL, BL, FR, BR = 0, 0, 0, 0
+                            self.car.motor.set_motor_model(FL, BL, FR, BR)
+                            self.path_logger.record(FL, BL, FR, BR)
+                            self.current_FL, self.current_BL, self.current_FR, self.current_BR = FL, BL, FR, BR
                             self._set_auto_state(AUTO_STABILIZE)
 
                     elif self.auto_state == AUTO_STABILIZE:
                         if self._time_in_state() >= STABILIZE_DURATION:
                             self._set_auto_state(AUTO_FORWARD)
+
+                elif self.current_mode == RETURN_HOME:
+                    if self.return_home is None:
+                        self.return_home = ReturnHome(
+                            motor=self.car.motor,
+                            sonic=self.car.sonic,
+                            odometry=self.odometry
+                        )
+                    done = self.return_home.update()
+                    if done:
+                        self.current_mode = MANUAL
+                        self.return_home = None
+                        print("[car_loop] Arrived home, switching to manual")
+
+                elif self.current_mode == RETURN_HOME_TRACE:
+                    if self.return_home_trace is None:
+                        self.return_home_trace = ReturnHomeTrace(
+                            motor=self.car.motor,
+                            sonic=self.car.sonic,
+                            path_logger=self.path_logger
+                        )
+                    done = self.return_home_trace.update()
+                    if done:
+                        self.current_mode = MANUAL
+                        self.return_home_trace = None
+                        self.path_logger.reset()
+                        print("[car_loop] Trace complete, switching to manual")
 
                 # Update odometry every iteration
                 self.odometry.update(
@@ -194,7 +246,7 @@ class CarLoop:
                 # Publish state every iteration
                 pos = self.odometry.get_position()
                 self.client.publish_state(
-                    speed=self.current_FL,  # rough proxy for now
+                    speed=self.current_FL,
                     heading=pos["heading"],
                     mode=self.current_mode,
                     x=pos["x"],

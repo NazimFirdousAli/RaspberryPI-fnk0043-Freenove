@@ -7,9 +7,9 @@ import json
 import threading
 import pygame
 import paho.mqtt.client as mqtt
-from shared.payloads import make_command, make_servo, make_buzzer
+from shared.payloads import make_command, make_servo, make_buzzer, make_mode
 from video_receiver import VideoReceiver
-from shared.topics import LEADER_CMD, FOLLOWER_CMD, LEADER_STATE, FOLLOWER_STATE, LEADER_SERVO, FOLLOWER_SERVO, SYSTEM_MODE, MANUAL_TARGET, LEADER_BUZZER, FOLLOWER_BUZZER
+from shared.topics import LEADER_CMD, FOLLOWER_CMD, LEADER_SERVO, FOLLOWER_SERVO, SYSTEM_MODE, MANUAL_TARGET, LEADER_BUZZER, FOLLOWER_BUZZER
 
 VALID_KEYS = {
     pygame.K_w: "w",
@@ -29,13 +29,27 @@ TILT_MIN    = 0
 TILT_MAX    = 180
 SERVO_STEP  = 5
 
+# Window
+WINDOW_W      = 800
+WINDOW_H      = 560  # 500 video + 60 for buttons
+BUTTON_HEIGHT = 40
+BUTTON_MARGIN = 10
+
+BUTTONS = [
+    {"label": "MANUAL",      "mode": "manual"},
+    {"label": "AUTO",        "mode": "auto"},
+    {"label": "RETURN HOME", "mode": "return_home"},
+    {"label": "TRACE HOME",  "mode": "return_home_trace"},
+]
+
 class ManualController:
     def __init__(self, broker_host: str, pi_host: str):
-        self.broker_host = broker_host
+        self.broker_host  = broker_host
         self.pressed_keys = set()
-        self.servo_keys = set()
-        self.target = "leader"
-        self.running = True
+        self.servo_keys   = set()
+        self.target       = "leader"
+        self.running      = True
+        self.current_mode = "manual"
 
         self.video = VideoReceiver(host=pi_host)
         self.video.start()
@@ -61,6 +75,9 @@ class ManualController:
     def _get_servo_topic(self):
         return LEADER_SERVO if self.target == "leader" else FOLLOWER_SERVO
 
+    def _get_buzzer_topic(self):
+        return LEADER_BUZZER if self.target == "leader" else FOLLOWER_BUZZER
+
     def _publish_keys(self):
         payload = make_command(self.pressed_keys)
         self.client.publish(self._get_cmd_topic(), json.dumps(payload), qos=0)
@@ -68,6 +85,16 @@ class ManualController:
     def _publish_servo(self):
         payload = make_servo(self.pan, self.tilt)
         self.client.publish(self._get_servo_topic(), json.dumps(payload), qos=0)
+
+    def _publish_buzzer(self, state: bool):
+        payload = make_buzzer(state)
+        self.client.publish(self._get_buzzer_topic(), json.dumps(payload), qos=0)
+
+    def _publish_mode(self, mode: str):
+        payload = make_mode(mode)
+        self.client.publish(SYSTEM_MODE, json.dumps(payload), qos=1)
+        self.current_mode = mode
+        print(f"[controller] Mode → {mode}")
 
     def _clamp_pan(self, val):
         return max(PAN_MIN, min(PAN_MAX, val))
@@ -78,13 +105,13 @@ class ManualController:
     def _draw(self, screen, font):
         screen.fill((30, 30, 30))
 
-        # Draw video feed if available
+        # Video feed
         frame = self.video.get_surface()
         if frame is not None:
-            frame = pygame.transform.scale(frame, (800, 500))
-            screen.blit(frame, (0, 0))  # top left
+            frame = pygame.transform.scale(frame, (WINDOW_W, 500))
+            screen.blit(frame, (0, 0))
 
-        # Draw HUD on top of video
+        # HUD
         title    = font.render("Freenove Manual Controller", True, (255, 255, 255))
         target   = font.render(f"Target: {self.target}", True, (0, 255, 100))
         keys     = font.render(f"Keys: {sorted(self.pressed_keys)}", True, (255, 255, 0))
@@ -97,18 +124,23 @@ class ManualController:
         screen.blit(servo,    (20, 140))
         screen.blit(controls, (20, 190))
 
+        # Mode buttons
+        button_w = (WINDOW_W - BUTTON_MARGIN * (len(BUTTONS) + 1)) // len(BUTTONS)
+        for i, btn in enumerate(BUTTONS):
+            x = BUTTON_MARGIN + i * (button_w + BUTTON_MARGIN)
+            y = 500 + BUTTON_MARGIN
+            is_active = (self.current_mode == btn["mode"])
+            color = (0, 180, 100) if is_active else (70, 70, 70)
+            pygame.draw.rect(screen, color, (x, y, button_w, BUTTON_HEIGHT), border_radius=6)
+            label = font.render(btn["label"], True, (255, 255, 255))
+            label_rect = label.get_rect(center=(x + button_w // 2, y + BUTTON_HEIGHT // 2))
+            screen.blit(label, label_rect)
+
         pygame.display.flip()
-
-    def _get_buzzer_topic(self):
-        return LEADER_BUZZER if self.target == "leader" else FOLLOWER_BUZZER
-
-    def _publish_buzzer(self, state: bool):
-        payload = make_buzzer(state)
-        self.client.publish(self._get_buzzer_topic(), json.dumps(payload), qos=0)
 
     def start(self):
         pygame.init()
-        screen = pygame.display.set_mode((800, 500))
+        screen = pygame.display.set_mode((WINDOW_W, WINDOW_H))
         pygame.display.set_caption("Manual Controller")
         font = pygame.font.SysFont("monospace", 18)
         clock = pygame.time.Clock()
@@ -117,6 +149,15 @@ class ManualController:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
+
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    mx, my = event.pos
+                    button_w = (WINDOW_W - BUTTON_MARGIN * (len(BUTTONS) + 1)) // len(BUTTONS)
+                    for i, btn in enumerate(BUTTONS):
+                        x = BUTTON_MARGIN + i * (button_w + BUTTON_MARGIN)
+                        y = 500 + BUTTON_MARGIN
+                        if x <= mx <= x + button_w and y <= my <= y + BUTTON_HEIGHT:
+                            self._publish_mode(btn["mode"])
 
                 elif event.type == pygame.KEYDOWN:
                     if event.key in VALID_KEYS:
@@ -140,7 +181,7 @@ class ManualController:
                         self._publish_buzzer(False)
                     elif event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN):
                         self.servo_keys.discard(event.key)
-            
+
             # Handle held servo keys
             servo_moved = False
             if pygame.K_LEFT in self.servo_keys:
