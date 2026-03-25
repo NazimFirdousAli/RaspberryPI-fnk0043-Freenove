@@ -15,7 +15,11 @@ RETURN_HOME_TRACE = "return_home_trace"
 
 SPEED = 1000
 MAX_SPEED = 4000
-LEFT_SCALE  = 1.20  # start here and adjust
+
+# Motor balance correction
+# If car swerves LEFT, reduce LEFT_SCALE below 1.0
+# If car swerves RIGHT, reduce RIGHT_SCALE below 1.0
+LEFT_SCALE  = 1.2
 RIGHT_SCALE = 1.0
 
 # Auto mode settings
@@ -61,12 +65,7 @@ def compute_motor_vector(keys: list) -> tuple:
             FR += v[2]
             BR += v[3]
     clamp = lambda val: max(-MAX_SPEED, min(MAX_SPEED, val))
-    # Apply left/right scale correction
-    FL = clamp(int(FL * LEFT_SCALE))
-    BL = clamp(int(BL * LEFT_SCALE))
-    FR = clamp(int(FR * RIGHT_SCALE))
-    BR = clamp(int(BR * RIGHT_SCALE))
-    return FL, BL, FR, BR
+    return clamp(FL), clamp(BL), clamp(FR), clamp(BR)
 
 class CarLoop:
     def __init__(self, car_id: str, broker_host: str):
@@ -121,9 +120,18 @@ class CarLoop:
         elif topic == SYSTEM_MODE:
             self.current_mode = payload.get("mode", MANUAL)
 
+    def set_motors(self, FL: int, BL: int, FR: int, BR: int):
+        """Apply left/right scale correction and set motors."""
+        clamp = lambda val: max(-MAX_SPEED, min(MAX_SPEED, val))
+        FL = clamp(int(FL * LEFT_SCALE))
+        BL = clamp(int(BL * LEFT_SCALE))
+        FR = clamp(int(FR * RIGHT_SCALE))
+        BR = clamp(int(BR * RIGHT_SCALE))
+        self.car.motor.set_motor_model(FL, BL, FR, BR)
+        self.current_FL, self.current_BL, self.current_FR, self.current_BR = FL, BL, FR, BR
+
     def stop_motors(self):
-        self.car.motor.set_motor_model(0, 0, 0, 0)
-        self.current_FL = self.current_BL = self.current_FR = self.current_BR = 0
+        self.set_motors(0, 0, 0, 0)
 
     def center_servos(self):
         self.pan  = PAN_CENTER
@@ -150,7 +158,6 @@ class CarLoop:
         try:
             while self.running:
 
-                # Detect mode change and stop motors for clean transition
                 if self.current_mode != self.previous_mode:
                     print(f"[mode] {self.previous_mode} → {self.current_mode}")
                     self.stop_motors()
@@ -161,54 +168,36 @@ class CarLoop:
                     self.return_home_trace = None
 
                 if self.current_mode == MANUAL:
-
-                    # Movement
                     FL, BL, FR, BR = compute_motor_vector(self.current_keys)
-                    self.car.motor.set_motor_model(FL, BL, FR, BR)
+                    self.set_motors(FL, BL, FR, BR)
                     self.path_logger.record(FL, BL, FR, BR)
-                    self.current_FL, self.current_BL, self.current_FR, self.current_BR = FL, BL, FR, BR
 
-                    # Servos
                     self.car.servo.set_servo_pwm('0', self.pan)
                     self.car.servo.set_servo_pwm('1', self.tilt)
-
-                    # Buzzer
                     self.buzzer.set_state(self.buzzer_state)
 
                 elif self.current_mode == AUTO:
                     dist = self.get_accurate_distance()
 
                     if self.auto_state == AUTO_FORWARD:
-                        FL, BL, FR, BR = SLOW_SPEED, SLOW_SPEED, SLOW_SPEED, SLOW_SPEED
-                        self.car.motor.set_motor_model(FL, BL, FR, BR)
-                        self.path_logger.record(FL, BL, FR, BR)
-                        self.current_FL, self.current_BL, self.current_FR, self.current_BR = FL, BL, FR, BR
+                        self.set_motors(SLOW_SPEED, SLOW_SPEED, SLOW_SPEED, SLOW_SPEED)
+                        self.path_logger.record(SLOW_SPEED, SLOW_SPEED, SLOW_SPEED, SLOW_SPEED)
                         if dist is not None and dist < SAFE_DISTANCE:
                             print(f"Obstacle at {dist:.1f}cm!")
-                            FL, BL, FR, BR = -900, -900, -900, -900
-                            self.car.motor.set_motor_model(FL, BL, FR, BR)
-                            self.path_logger.record(FL, BL, FR, BR)
-                            self.current_FL, self.current_BL, self.current_FR, self.current_BR = FL, BL, FR, BR
+                            self.set_motors(-900, -900, -900, -900)
+                            self.path_logger.record(-900, -900, -900, -900)
                             self._set_auto_state(AUTO_BRAKING)
 
                     elif self.auto_state == AUTO_BRAKING:
                         if self._time_in_state() >= BRAKE_DURATION:
-                            FL, BL, FR, BR = 0, 0, 0, 0
-                            self.car.motor.set_motor_model(FL, BL, FR, BR)
-                            self.path_logger.record(FL, BL, FR, BR)
-                            self.current_FL, self.current_BL, self.current_FR, self.current_BR = FL, BL, FR, BR
-                            FL, BL, FR, BR = -TURN_SPEED, -TURN_SPEED, TURN_SPEED, TURN_SPEED
-                            self.car.motor.set_motor_model(FL, BL, FR, BR)
-                            self.path_logger.record(FL, BL, FR, BR)
-                            self.current_FL, self.current_BL, self.current_FR, self.current_BR = FL, BL, FR, BR
+                            self.set_motors(0, 0, 0, 0)
+                            self.set_motors(-TURN_SPEED, -TURN_SPEED, TURN_SPEED, TURN_SPEED)
+                            self.path_logger.record(-TURN_SPEED, -TURN_SPEED, TURN_SPEED, TURN_SPEED)
                             self._set_auto_state(AUTO_TURNING)
 
                     elif self.auto_state == AUTO_TURNING:
                         if self._time_in_state() >= TURN_DURATION:
-                            FL, BL, FR, BR = 0, 0, 0, 0
-                            self.car.motor.set_motor_model(FL, BL, FR, BR)
-                            self.path_logger.record(FL, BL, FR, BR)
-                            self.current_FL, self.current_BL, self.current_FR, self.current_BR = FL, BL, FR, BR
+                            self.set_motors(0, 0, 0, 0)
                             self._set_auto_state(AUTO_STABILIZE)
 
                     elif self.auto_state == AUTO_STABILIZE:

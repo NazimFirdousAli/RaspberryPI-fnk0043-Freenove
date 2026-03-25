@@ -3,34 +3,67 @@ import math
 from motor import Ordinary_Car
 from infrared import Infrared
 
-CALIB_SPEED = 1000  # motor value used during calibration
-DEBOUNCE    = 0.3   # seconds to wait after a detection before looking again
+CALIB_SPEED = 1000
+DEBOUNCE    = 0.05
 
-def wait_for_line(infrared, debounce=DEBOUNCE):
-    """Block until the middle infrared sensor detects a black line."""
-    while True:
+LEFT_SCALE  = 1.20
+RIGHT_SCALE = 1.0
+
+def set_motors(motor, FL, BL, FR, BR):
+    clamp = lambda val: max(-4000, min(4000, val))
+    FL = clamp(int(FL * LEFT_SCALE))
+    BL = clamp(int(BL * LEFT_SCALE))
+    FR = clamp(int(FR * RIGHT_SCALE))
+    BR = clamp(int(BR * RIGHT_SCALE))
+    motor.set_motor_model(FL, BL, FR, BR)
+
+def _sustained_detection(infrared, count=3):
+    """Returns True if sensor 2 reads 1 for count consecutive readings."""
+    hits = 0
+    for _ in range(count):
         if infrared.read_one_infrared(2) == 1:
-            time.sleep(debounce)  # debounce — avoid double-triggering
-            return
+            hits += 1
+        else:
+            return False
         time.sleep(0.005)
+    return hits == count
+
+def wait_for_line(infrared):
+    """Wait for sensor 2 to clear, then detect tape with sustained reading."""
+    # Wait for sensor to be clear (not on tape)
+    while infrared.read_one_infrared(2) == 1:
+        time.sleep(0.005)
+    # Wait for sustained tape detection
+    while not _sustained_detection(infrared):
+        time.sleep(0.005)
+    time.sleep(DEBOUNCE)
 
 def calibrate_linear(motor, infrared):
     print("\n--- LINEAR CALIBRATION ---")
-    print("Place car before first tape line, 1 meter from second tape line.")
+    print("Place car a few cm before the first tape line.")
+    print("Second tape line should be exactly 1 meter ahead.")
     input("Press ENTER to start...")
 
-    # Drive forward
-    motor.set_motor_model(CALIB_SPEED, CALIB_SPEED, CALIB_SPEED, CALIB_SPEED)
+    set_motors(motor, CALIB_SPEED, CALIB_SPEED, CALIB_SPEED, CALIB_SPEED)
 
-    print("Waiting for first tape line...")
-    wait_for_line(infrared)
+    # Wait for first line
+    print("Driving... waiting for first tape line...")
+    while not _sustained_detection(infrared):
+        time.sleep(0.005)
     t_start = time.time()
-    print("First line detected! Waiting for second...")
+    print("First line detected! Counting...")
 
-    wait_for_line(infrared)
+    # Wait for sensor to clear the first line
+    while infrared.read_one_infrared(2) == 1:
+        time.sleep(0.005)
+
+    # Wait for second line
+    print("Waiting for second tape line...")
+    while not _sustained_detection(infrared):
+        time.sleep(0.005)
     t_end = time.time()
 
-    motor.set_motor_model(0, 0, 0, 0)
+    set_motors(motor, 0, 0, 0, 0)
 
     elapsed = t_end - t_start
     speed_scale = 1.0 / (elapsed * CALIB_SPEED)
@@ -47,8 +80,7 @@ def calibrate_rotation(motor, infrared):
     print("Place a single piece of tape on the ground under the middle sensor.")
     input("Press ENTER to start...")
 
-    # Rotate left
-    motor.set_motor_model(-CALIB_SPEED, -CALIB_SPEED, CALIB_SPEED, CALIB_SPEED)
+    set_motors(motor, -CALIB_SPEED, -CALIB_SPEED, CALIB_SPEED, CALIB_SPEED)
 
     print("Waiting for tape line (start)...")
     wait_for_line(infrared)
@@ -58,7 +90,7 @@ def calibrate_rotation(motor, infrared):
     wait_for_line(infrared)
     t_end = time.time()
 
-    motor.set_motor_model(0, 0, 0, 0)
+    set_motors(motor, 0, 0, 0, 0)
 
     elapsed = t_end - t_start
     rotation_scale = (2 * math.pi) / (elapsed * CALIB_SPEED)
@@ -76,12 +108,18 @@ def calibrate_swerve(motor, infrared):
     print("Align the car straight behind the first line.")
     input("Press ENTER to start...")
 
-    # Track crossing times for each sensor
     line1_times = {1: None, 2: None, 3: None}
     line2_times = {1: None, 2: None, 3: None}
 
     def wait_for_all_lines(times_dict):
-        """Wait until all 3 sensors have crossed a line."""
+        """Wait for all 3 sensors to transition from 0 to 1 (tape detected)."""
+        # Wait until all sensors are clear
+        while True:
+            all_clear = all(infrared.read_one_infrared(ch) == 0 for ch in [1, 2, 3])
+            if all_clear:
+                break
+            time.sleep(0.005)
+
         detected = {1: False, 2: False, 3: False}
         while not all(detected.values()):
             for ch in [1, 2, 3]:
@@ -91,22 +129,19 @@ def calibrate_swerve(motor, infrared):
                     print(f"  Sensor {ch} crossed at {times_dict[ch]:.4f}")
             time.sleep(0.005)
 
-    # Drive forward
-    motor.set_motor_model(CALIB_SPEED, CALIB_SPEED, CALIB_SPEED, CALIB_SPEED)
+    set_motors(motor, CALIB_SPEED, CALIB_SPEED, CALIB_SPEED, CALIB_SPEED)
 
     print("\nWaiting for first tape line...")
     wait_for_all_lines(line1_times)
     print("First line complete.")
 
-    # Small debounce gap between lines
     time.sleep(DEBOUNCE)
 
     print("\nWaiting for second tape line...")
     wait_for_all_lines(line2_times)
 
-    motor.set_motor_model(0, 0, 0, 0)
+    set_motors(motor, 0, 0, 0, 0)
 
-    # Compute travel time per sensor
     travel_times = {
         ch: line2_times[ch] - line1_times[ch]
         for ch in [1, 2, 3]
@@ -120,7 +155,6 @@ def calibrate_swerve(motor, infrared):
     print(f"Sensor 3 (right)  travel time: {travel_times[3]:.4f}s")
     print(f"Average           travel time: {avg_time:.4f}s")
 
-    # Drift analysis
     drift_1 = travel_times[1] - avg_time
     drift_3 = travel_times[3] - avg_time
 
@@ -132,14 +166,12 @@ def calibrate_swerve(motor, infrared):
     else:
         print(f"⚠ Car drifts LEFT (sensor 3 is faster by {travel_times[1] - travel_times[3]:.4f}s)")
 
-    # Suggest motor compensation
     if abs(drift_1 - drift_3) >= 0.02:
         ratio = travel_times[1] / travel_times[3]
         print(f"\nSuggested left/right motor compensation ratio: {ratio:.4f}")
-        print(f"Apply in odometry.py as: LEFT_SCALE = {min(ratio, 1.0):.4f}, RIGHT_SCALE = {max(ratio, 1.0):.4f}")
+        print(f"Apply in car_loop.py as: LEFT_SCALE = {min(ratio, 1.0):.4f}, RIGHT_SCALE = {max(ratio, 1.0):.4f}")
 
     return travel_times
-
 
 if __name__ == "__main__":
     motor    = Ordinary_Car()
@@ -164,6 +196,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\nCalibration interrupted.")
     finally:
-        motor.set_motor_model(0, 0, 0, 0)
+        set_motors(motor, 0, 0, 0, 0)
         infrared.close()
         print("Done.")
