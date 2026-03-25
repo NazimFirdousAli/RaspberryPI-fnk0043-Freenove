@@ -103,7 +103,6 @@ class ManualController:
         return max(TILT_MIN, min(TILT_MAX, val))
 
     def _draw(self, screen, font):
-        print("Here")
         screen.fill((30, 30, 30))
 
         # Video feed
