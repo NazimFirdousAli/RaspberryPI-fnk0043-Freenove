@@ -14,6 +14,10 @@ FOLLOWER_SERVO = "cars/follower/servo"
 LEADER_BUZZER = "cars/leader/buzzer"
 FOLLOWER_BUZZER = "cars/follower/buzzer"
 
+# position
+LEADER_POSITION  = "cars/leader/position"
+FOLLOWER_POSITION = "cars/follower/position"
+
 # System wide
 SYSTEM_MODE = "system/mode"           # "manual" or "autonomous"
 MANUAL_TARGET = "system/manual/target" # "leader" or "follower"

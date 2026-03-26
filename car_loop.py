@@ -1,5 +1,6 @@
 import time
 import sys
+import math
 from car import Car
 from car_client import CarClient
 from shared.topics import SYSTEM_MODE
@@ -117,6 +118,14 @@ class CarLoop:
             self.tilt = payload.get("tilt", self.tilt)
         elif topic == self.client.buzzer_topic:
             self.buzzer_state = payload.get("state", False)
+        elif topic == self.client.position_topic:
+            x       = payload.get("x", self.odometry.x)
+            y       = payload.get("y", self.odometry.y)
+            heading = payload.get("heading", math.degrees(self.odometry.heading))
+            # Update odometry with camera position
+            self.odometry.x       = x
+            self.odometry.y       = y
+            self.odometry.heading = math.radians(heading)
         elif topic == SYSTEM_MODE:
             self.current_mode = payload.get("mode", MANUAL)
 
