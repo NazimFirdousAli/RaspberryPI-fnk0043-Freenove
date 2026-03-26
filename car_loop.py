@@ -8,11 +8,13 @@ from buzzer import Buzzer
 from odometry import Odometry
 from return_home import ReturnHome
 from return_home_trace import ReturnHomeTrace, PathLogger
+from go_to_position import GoToPosition
 
 MANUAL = "manual"
 AUTO = "auto"
 RETURN_HOME = "return_home"
 RETURN_HOME_TRACE = "return_home_trace"
+GO_TO_POSITION = "go_to_position"
 
 SPEED = 1000
 MAX_SPEED = 4000
@@ -99,6 +101,12 @@ class CarLoop:
         self.car.servo.set_servo_pwm('0', PAN_CENTER)
         self.car.servo.set_servo_pwm('1', TILT_CENTER)
 
+        self.go_to_position = GoToPosition(
+            motor=self.car.motor,
+            sonic=self.car.sonic,
+            odometry=self.odometry
+        )
+
         # Auto mode state
         self.auto_state = AUTO_FORWARD
         self.auto_state_start = time.time()
@@ -126,6 +134,12 @@ class CarLoop:
             self.odometry.x       = x
             self.odometry.y       = y
             self.odometry.heading = math.radians(heading)
+        elif topic == self.client.waypoint_topic:
+            x     = payload.get("x", 0)
+            y     = payload.get("y", 0)
+            label = payload.get("label", "")
+            self.go_to_position.add_waypoint(x, y, label)
+            self.current_mode = GO_TO_POSITION
         elif topic == SYSTEM_MODE:
             self.current_mode = payload.get("mode", MANUAL)
 
@@ -177,6 +191,7 @@ class CarLoop:
                     self.previous_mode = self.current_mode
                     self.return_home = None
                     self.return_home_trace = None
+                    self.go_to_position.clear_waypoints()
 
                 if self.current_mode == MANUAL:
                     FL, BL, FR, BR = compute_motor_vector(self.current_keys)
@@ -214,6 +229,13 @@ class CarLoop:
                     elif self.auto_state == AUTO_STABILIZE:
                         if self._time_in_state() >= STABILIZE_DURATION:
                             self._set_auto_state(AUTO_FORWARD)
+
+                elif self.current_mode == GO_TO_POSITION:
+                    done = self.go_to_position.update()
+                    if done:
+                        self.current_mode = MANUAL
+                        print("[car_loop] All waypoints reached, switching to manual")
+
 
                 elif self.current_mode == RETURN_HOME:
                     if self.return_home is None:

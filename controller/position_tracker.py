@@ -8,14 +8,14 @@ import numpy as np
 import json
 import time
 import paho.mqtt.client as mqtt
-from shared.topics import LEADER_STATE, FOLLOWER_STATE, LEADER_POSITION, FOLLOWER_POSITION
-from shared.payloads import make_state
+from shared.topics import LEADER_STATE, FOLLOWER_STATE, LEADER_POSITION, FOLLOWER_POSITION, LEADER_WAYPOINT
+from shared.payloads import make_state, make_waypoint
 
 # --- CONFIGURE THESE ---
 SHEET_WIDTH_M  = 3
 SHEET_HEIGHT_M = 1.5
 CAMERA_INDEX   = 0     # webcam index
-PUBLISH_RATE   = 0.05  # publish every 50ms (20hz)
+PUBLISH_RATE   = 0.033  # publish every 50ms (20hz)
 
 # HSV color ranges for arrow detection
 # Tune these using color_tuner.py
@@ -37,23 +37,35 @@ FOLLOWER_COLOR_HSV = {
 SHEET_CORNERS_PX = None  # set by calibrate_sheet()
 
 def calibrate_sheet(frame):
-    """
-    Let user click the 4 corners of the sheet to set up
-    the pixel-to-meter transform.
-    """
     corners = []
     clone = frame.copy()
+    
+    corner_names = [
+        "Top-Left",
+        "Top-Right", 
+        "Bottom-Right",
+        "Bottom-Left"
+    ]
 
     def click(event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN and len(corners) < 4:
             corners.append((x, y))
-            cv2.circle(clone, (x, y), 5, (0, 255, 0), -1)
-            cv2.imshow("Calibrate — click 4 corners (TL, TR, BR, BL)", clone)
+            cv2.circle(clone, (x, y), 8, (0, 255, 0), -1)
+            cv2.putText(clone, corner_names[len(corners)-1], (x + 10, y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            cv2.imshow(win_name, clone)
+            if len(corners) < 4:
+                print(f"✓ {corner_names[len(corners)-1]} set. Now click: {corner_names[len(corners)]}")
+            else:
+                print("✓ All 4 corners set!")
 
-    cv2.imshow("Calibrate — click 4 corners (TL, TR, BR, BL)", clone)
-    cv2.setMouseCallback("Calibrate — click 4 corners (TL, TR, BR, BL)", click)
+    win_name = "Calibrate Sheet"
+    cv2.imshow(win_name, clone)
+    cv2.setMouseCallback(win_name, click)
 
-    print("Click the 4 corners of the sheet: Top-Left, Top-Right, Bottom-Right, Bottom-Left")
+    print(f"\nClick the 4 corners of the tarp in order.")
+    print(f"Start with: {corner_names[0]}")
+
     while len(corners) < 4:
         cv2.waitKey(1)
 
@@ -151,6 +163,8 @@ class PositionTracker:
         self.client.publish(topic, json.dumps(payload), qos=0)
 
     def run(self, camera_index: int = CAMERA_INDEX):
+        global SHEET_CORNERS_PX
+
         cap = cv2.VideoCapture(camera_index)
         if not cap.isOpened():
             print("Error: Could not open camera.")
@@ -162,9 +176,19 @@ class PositionTracker:
             print("Error: Could not read frame.")
             return
 
-        corners = calibrate_sheet(frame)
-        self.transform = get_transform(corners)
+        SHEET_CORNERS_PX = calibrate_sheet(frame)
+        self.transform = get_transform(SHEET_CORNERS_PX)
         print("Calibration complete! Starting tracking...")
+
+        def on_click(event, x, y, flags, param):
+            if event == cv2.EVENT_LBUTTONDOWN:
+                if self.transform is not None:
+                    wx, wy = pixel_to_meters(x, y, self.transform)
+                    payload = make_waypoint(wx, wy, label="click")
+                    self.client.publish(LEADER_WAYPOINT, json.dumps(payload), qos=1)
+                    print(f"[tracker] Waypoint sent: ({wx:.3f}, {wy:.3f})")
+
+        cv2.setMouseCallback("Position Tracker", on_click)
 
         while True:
             ret, frame = cap.read()
@@ -174,12 +198,17 @@ class PositionTracker:
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
             debug = frame.copy()
 
+            # Black background for coordinate display
+            cv2.rectangle(debug, (0, 0), (500, 80), (0, 0, 0), -1)
+
             # Detect leader
             leader = detect_arrow(frame, hsv, LEADER_COLOR_HSV, LEADER_COLOR_HSV2)
             if leader:
                 cx, cy, angle = leader
                 x, y = pixel_to_meters(cx, cy, self.transform)
-                draw_debug(debug, cx, cy, angle, "Leader", (0, 0, 255))
+                draw_debug(debug, cx, cy, angle, "Leader", (0, 100, 255))
+                cv2.putText(debug, f"Leader:   x={x:.3f}m  y={y:.3f}m  h={angle:.1f}",
+                            (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                 if time.time() - self.last_publish > PUBLISH_RATE:
                     self.publish_position("leader", x, y, angle)
 
@@ -189,9 +218,23 @@ class PositionTracker:
                 cx, cy, angle = follower
                 x, y = pixel_to_meters(cx, cy, self.transform)
                 draw_debug(debug, cx, cy, angle, "Follower", (0, 255, 0))
+                cv2.putText(debug, f"Follower: x={x:.3f}m  y={y:.3f}m  h={angle:.1f}",
+                            (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                 if time.time() - self.last_publish > PUBLISH_RATE:
                     self.publish_position("follower", x, y, angle)
                     self.last_publish = time.time()
+
+            # Draw corner markers with coordinates
+            corner_labels = [
+                f"TL(0,0)",
+                f"TR({SHEET_WIDTH_M},0)",
+                f"BR({SHEET_WIDTH_M},{SHEET_HEIGHT_M})",
+                f"BL(0,{SHEET_HEIGHT_M})"
+            ]
+            for i, (cp, label) in enumerate(zip(SHEET_CORNERS_PX.astype(int), corner_labels)):
+                cv2.circle(debug, tuple(cp), 8, (0, 255, 255), -1)
+                cv2.putText(debug, label, (cp[0] + 10, cp[1] + 15),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
 
             cv2.imshow("Position Tracker", debug)
             if cv2.waitKey(1) & 0xFF == ord('q'):
