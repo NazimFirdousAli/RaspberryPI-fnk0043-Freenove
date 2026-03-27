@@ -216,16 +216,16 @@ class PositionTracker:
                     self.last_publish = time.time()
 
             # Detect follower
-            follower = detect_arrow(frame, hsv, FOLLOWER_COLOR_HSV)
-            if follower:
-                cx, cy, angle = follower
-                x, y = pixel_to_meters(cx, cy, self.transform)
-                draw_debug(debug, cx, cy, angle, "Follower", (0, 255, 0))
-                cv2.putText(debug, f"Follower: x={x:.3f}m  y={y:.3f}m  h={angle:.1f}",
-                            (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-                if time.time() - self.last_publish > PUBLISH_RATE:
-                    self.publish_position("follower", x, y, angle)
-                    self.last_publish = time.time()
+            # follower = detect_arrow(frame, hsv, FOLLOWER_COLOR_HSV)
+            # if follower:
+            #     cx, cy, angle = follower
+            #     x, y = pixel_to_meters(cx, cy, self.transform)
+            #     draw_debug(debug, cx, cy, angle, "Follower", (0, 255, 0))
+            #     cv2.putText(debug, f"Follower: x={x:.3f}m  y={y:.3f}m  h={angle:.1f}",
+            #                 (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            #     if time.time() - self.last_publish > PUBLISH_RATE:
+            #         self.publish_position("follower", x, y, angle)
+            #         self.last_publish = time.time()
 
             # Draw corner markers with coordinates
             corner_labels = [
