@@ -1,5 +1,6 @@
 import time
 import math
+import random
 from motor import Ordinary_Car
 from ultrasonic import Ultrasonic
 from odometry import Odometry
@@ -7,10 +8,10 @@ from odometry import Odometry
 # Tuning
 RETURN_SPEED       = 1000
 TURN_SPEED         = 600
-ARRIVAL_THRESHOLD  = 0.15   # meters
-ANGLE_THRESHOLD    = 0.3    # radians
+ARRIVAL_THRESHOLD  = 0.15
+ANGLE_THRESHOLD    = 0.3
 SAFE_DISTANCE      = 30.0
-WAYPOINT_PAUSE     = 2.0    # seconds to pause at each waypoint
+WAYPOINT_PAUSE     = 2.0
 
 BRAKE_DURATION        = 0.15
 TURN_DURATION         = 0.7
@@ -33,30 +34,24 @@ RANDOM_ESCAPE_DRIVE = "random_escape_drive"
 DONE                = "done"
 
 class GoToPosition:
-    def __init__(self, motor, sonic, odometry, set_motors_fn=None):
-        self.motor    = motor
-        self.sonic    = sonic
-        self.odometry = odometry
-
-        self.waypoints = []   # list of (x, y, label)
-        self.current_target = None
-        self.state      = DONE
-        self.state_start = time.time()
-        self.attempts   = 0
-        self.escape_dir = 1
+    def __init__(self, motor: Ordinary_Car, sonic: Ultrasonic, odometry: Odometry,
+                 set_motors_fn=None, boundary_fn=None):
+        self.motor          = motor
+        self.sonic          = sonic
+        self.odometry       = odometry
         self._set_motors_fn = set_motors_fn
+        self._boundary_fn   = boundary_fn
 
-    def _set_motors(self, FL, BL, FR, BR):
-        if self._set_motors_fn:
-            self._set_motors_fn(FL, BL, FR, BR)
-        else:
-            self.motor.set_motor_model(FL, BL, FR, BR)
-        self.odometry.update(FL, BL, FR, BR)
+        self.waypoints       = []
+        self.current_target  = None
+        self.state           = DONE
+        self.state_start     = time.time()
+        self.attempts        = 0
+        self.escape_dir      = 1
 
     def add_waypoint(self, x: float, y: float, label: str = ""):
         self.waypoints.append((x, y, label))
         print(f"[goto] Waypoint added: ({x:.3f}, {y:.3f}) '{label}'")
-        # Start moving if idle
         if self.state == DONE:
             self._next_waypoint()
 
@@ -88,6 +83,8 @@ class GoToPosition:
         return time.time() - self.state_start
 
     def _get_distance(self) -> float:
+        if self._boundary_fn and self._boundary_fn():
+            return 10.0  # fake obstacle at boundary
         readings = []
         for _ in range(3):
             d = self.sonic.get_distance()
@@ -109,13 +106,16 @@ class GoToPosition:
         pos = self.odometry.get_position()
         dx = tx - pos["x"]
         dy = ty - pos["y"]
-        target_angle = math.atan2(-dy, dx)
+        target_angle = math.atan2(dy, dx)
         current_heading = math.radians(pos["heading"])
         error = target_angle - current_heading
         return (error + math.pi) % (2 * math.pi) - math.pi
 
     def _set_motors(self, FL, BL, FR, BR):
-        self.motor.set_motor_model(FL, BL, FR, BR)
+        if self._set_motors_fn:
+            self._set_motors_fn(FL, BL, FR, BR)
+        else:
+            self.motor.set_motor_model(FL, BL, FR, BR)
         self.odometry.update(FL, BL, FR, BR)
 
     def is_done(self) -> bool:
@@ -128,7 +128,6 @@ class GoToPosition:
         if not self.current_target:
             return True
 
-        # Check arrival
         if self._distance_to_target() < ARRIVAL_THRESHOLD and self.state in (ROTATE_TO_TARGET, DRIVE_TO_TARGET):
             x, y, label = self.current_target
             print(f"[goto] Arrived at ({x:.3f}, {y:.3f}) '{label}' — pausing {WAYPOINT_PAUSE}s")
@@ -188,7 +187,6 @@ class GoToPosition:
                 self.attempts += 1
                 self._set_motors(0, 0, 0, 0)
                 if self.attempts >= MAX_ATTEMPTS:
-                    import random
                     self.escape_dir = random.choice([1, -1])
                     if self.escape_dir == 1:
                         self._set_motors(-TURN_SPEED, -TURN_SPEED, TURN_SPEED, TURN_SPEED)

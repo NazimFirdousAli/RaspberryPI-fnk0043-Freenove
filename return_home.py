@@ -5,11 +5,10 @@ from motor import Ordinary_Car
 from ultrasonic import Ultrasonic
 from odometry import Odometry
 
-# Tuning parameters
 RETURN_SPEED       = 1000
-TURN_SPEED         = 600    # slow for precision
+TURN_SPEED         = 600
 HOME_THRESHOLD     = 0.15
-ANGLE_THRESHOLD    = 0.3    # more forgiving
+ANGLE_THRESHOLD    = 0.3
 SAFE_DISTANCE      = 30.0
 
 MAX_ATTEMPTS           = 3
@@ -20,7 +19,6 @@ STABILIZE_DURATION     = 0.2
 ESCAPE_TURN_DURATION   = 1.2
 ESCAPE_DRIVE_DURATION  = 1.5
 
-# States
 ROTATE_TO_HOME      = "rotate_to_home"
 DRIVE_TO_HOME       = "drive_to_home"
 AVOIDING_BRAKE      = "avoiding_brake"
@@ -32,14 +30,18 @@ RANDOM_ESCAPE_DRIVE = "random_escape_drive"
 ARRIVED             = "arrived"
 
 class ReturnHome:
-    def __init__(self, motor: Ordinary_Car, sonic: Ultrasonic, odometry: Odometry):
-        self.motor      = motor
-        self.sonic      = sonic
-        self.odometry   = odometry
-        self.state      = ROTATE_TO_HOME
+    def __init__(self, motor: Ordinary_Car, sonic: Ultrasonic, odometry: Odometry,
+                 set_motors_fn=None, boundary_fn=None):
+        self.motor          = motor
+        self.sonic          = sonic
+        self.odometry       = odometry
+        self._set_motors_fn = set_motors_fn
+        self._boundary_fn   = boundary_fn
+
+        self.state       = ROTATE_TO_HOME
         self.state_start = time.time()
-        self.attempts   = 0
-        self.escape_dir = 1
+        self.attempts    = 0
+        self.escape_dir  = 1
 
     def _time_in_state(self) -> float:
         return time.time() - self.state_start
@@ -50,6 +52,8 @@ class ReturnHome:
         print(f"[return_home] → {state}")
 
     def _get_distance(self) -> float:
+        if self._boundary_fn and self._boundary_fn():
+            return 10.0  # fake obstacle at boundary
         readings = []
         for _ in range(3):
             d = self.sonic.get_distance()
@@ -69,7 +73,10 @@ class ReturnHome:
         return (error + math.pi) % (2 * math.pi) - math.pi
 
     def _set_motors(self, FL, BL, FR, BR):
-        self.motor.set_motor_model(FL, BL, FR, BR)
+        if self._set_motors_fn:
+            self._set_motors_fn(FL, BL, FR, BR)
+        else:
+            self.motor.set_motor_model(FL, BL, FR, BR)
         self.odometry.update(FL, BL, FR, BR)
 
     def is_done(self) -> bool:
@@ -79,7 +86,6 @@ class ReturnHome:
         if self.state == ARRIVED:
             return True
 
-        # Check if home
         if self._distance_to_home() < HOME_THRESHOLD and self.state in (ROTATE_TO_HOME, DRIVE_TO_HOME):
             print("[return_home] Home reached!")
             self._set_motors(0, 0, 0, 0)
@@ -103,7 +109,6 @@ class ReturnHome:
                 self._set_motors(-900, -900, -900, -900)
                 self._set_state(AVOIDING_BRAKE)
             else:
-                # Recheck angle — if drifted, go back to rotate
                 angle_error = self._angle_error_to_home()
                 if abs(angle_error) > ANGLE_THRESHOLD:
                     self._set_motors(0, 0, 0, 0)
@@ -133,11 +138,9 @@ class ReturnHome:
                 self._set_state(AVOIDING_BRAKE)
             elif self._time_in_state() >= CLEAR_DURATION:
                 self.attempts += 1
-                print(f"[return_home] Attempt {self.attempts}/{MAX_ATTEMPTS}")
                 self._set_motors(0, 0, 0, 0)
                 if self.attempts >= MAX_ATTEMPTS:
                     self.escape_dir = random.choice([1, -1])
-                    print(f"[return_home] Random escape {'left' if self.escape_dir == 1 else 'right'}")
                     if self.escape_dir == 1:
                         self._set_motors(-TURN_SPEED, -TURN_SPEED, TURN_SPEED, TURN_SPEED)
                     else:
