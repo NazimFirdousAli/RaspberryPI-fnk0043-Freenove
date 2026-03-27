@@ -106,7 +106,7 @@ class GoToPosition:
         pos = self.odometry.get_position()
         dx = tx - pos["x"]
         dy = ty - pos["y"]
-        target_angle = math.atan2(dy, dx)
+        target_angle = math.atan2(-dy, dx)
         current_heading = math.radians(pos["heading"])
         error = target_angle - current_heading
         return (error + math.pi) % (2 * math.pi) - math.pi
