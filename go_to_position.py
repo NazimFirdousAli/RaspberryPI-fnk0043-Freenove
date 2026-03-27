@@ -33,7 +33,7 @@ RANDOM_ESCAPE_DRIVE = "random_escape_drive"
 DONE                = "done"
 
 class GoToPosition:
-    def __init__(self, motor: Ordinary_Car, sonic: Ultrasonic, odometry: Odometry):
+    def __init__(self, motor, sonic, odometry, set_motors_fn=None):
         self.motor    = motor
         self.sonic    = sonic
         self.odometry = odometry
@@ -44,6 +44,14 @@ class GoToPosition:
         self.state_start = time.time()
         self.attempts   = 0
         self.escape_dir = 1
+        self._set_motors_fn = set_motors_fn
+
+    def _set_motors(self, FL, BL, FR, BR):
+        if self._set_motors_fn:
+            self._set_motors_fn(FL, BL, FR, BR)
+        else:
+            self.motor.set_motor_model(FL, BL, FR, BR)
+        self.odometry.update(FL, BL, FR, BR)
 
     def add_waypoint(self, x: float, y: float, label: str = ""):
         self.waypoints.append((x, y, label))

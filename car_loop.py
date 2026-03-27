@@ -104,7 +104,8 @@ class CarLoop:
         self.go_to_position = GoToPosition(
             motor=self.car.motor,
             sonic=self.car.sonic,
-            odometry=self.odometry
+            odometry=self.odometry,
+            set_motors_fn=self.set_motors
         )
 
         # Auto mode state
@@ -184,14 +185,17 @@ class CarLoop:
             while self.running:
 
                 if self.current_mode != self.previous_mode:
-                    print(f"[mode] {self.previous_mode} → {self.current_mode}")
+                    old_mode = self.previous_mode
+                    print(f"[mode] {old_mode} → {self.current_mode}")
                     self.stop_motors()
                     self.center_servos()
                     self.auto_state = AUTO_FORWARD
                     self.previous_mode = self.current_mode
                     self.return_home = None
                     self.return_home_trace = None
-                    self.go_to_position.clear_waypoints()
+                    # Only clear waypoints when switching AWAY from go_to_position
+                    if old_mode == GO_TO_POSITION and self.current_mode != GO_TO_POSITION:
+                        self.go_to_position.clear_waypoints()
 
                 if self.current_mode == MANUAL:
                     FL, BL, FR, BR = compute_motor_vector(self.current_keys)

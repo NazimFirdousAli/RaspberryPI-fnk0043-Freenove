@@ -180,6 +180,8 @@ class PositionTracker:
         self.transform = get_transform(SHEET_CORNERS_PX)
         print("Calibration complete! Starting tracking...")
 
+        cv2.namedWindow("Position Tracker")
+
         def on_click(event, x, y, flags, param):
             if event == cv2.EVENT_LBUTTONDOWN:
                 if self.transform is not None:
@@ -211,6 +213,7 @@ class PositionTracker:
                             (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                 if time.time() - self.last_publish > PUBLISH_RATE:
                     self.publish_position("leader", x, y, angle)
+                    self.last_publish = time.time()
 
             # Detect follower
             follower = detect_arrow(frame, hsv, FOLLOWER_COLOR_HSV)
