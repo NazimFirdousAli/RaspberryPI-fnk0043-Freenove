@@ -30,17 +30,17 @@ LEADER_COLOR_HSV2 = {
 # Cup HSV ranges — tune with color_tuner.py tomorrow
 CUP_COLORS = {
     "light_blue": {
-        "hsv":  {"lower": np.array([85,  80,  80]),  "upper": np.array([105, 255, 255])},
+        "hsv":  {"lower": np.array([83,  82,  101]),  "upper": np.array([105, 255, 255])},
         "hsv2": None,
         "bgr":  (230, 216, 173),  # display color
     },
     "purple": {
-        "hsv":  {"lower": np.array([125, 80,  80]),  "upper": np.array([155, 255, 255])},
+        "hsv":  {"lower": np.array([127, 78,  18]),  "upper": np.array([180, 255, 255])},
         "hsv2": None,
         "bgr":  (211, 0, 147),
     },
     "green": {
-        "hsv":  {"lower": np.array([40,  70,  70]),  "upper": np.array([80,  255, 255])},
+        "hsv":  {"lower": np.array([40,  65,  64]),  "upper": np.array([81,  255, 255])},
         "hsv2": None,
         "bgr":  (0, 200, 0),
     },
