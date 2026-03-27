@@ -9,7 +9,7 @@ import pygame
 import paho.mqtt.client as mqtt
 from shared.payloads import make_command, make_servo, make_buzzer, make_mode
 from video_receiver import VideoReceiver
-from shared.topics import LEADER_CMD, FOLLOWER_CMD, LEADER_SERVO, FOLLOWER_SERVO, SYSTEM_MODE, MANUAL_TARGET, LEADER_BUZZER, FOLLOWER_BUZZER
+from shared.topics import LEADER_CMD, FOLLOWER_CMD, LEADER_SERVO, FOLLOWER_SERVO, SYSTEM_MODE, MANUAL_TARGET, LEADER_BUZZER, FOLLOWER_BUZZER, LEADER_WAYPOINT
 
 VALID_KEYS = {
     pygame.K_w: "w",
@@ -31,7 +31,7 @@ SERVO_STEP  = 5
 
 # Window
 WINDOW_W      = 800
-WINDOW_H      = 560  # 500 video + 60 for buttons
+WINDOW_H      = 620  # 500 video + 60 mode buttons + 60 cup buttons
 BUTTON_HEIGHT = 40
 BUTTON_MARGIN = 10
 
@@ -39,7 +39,12 @@ BUTTONS = [
     {"label": "MANUAL",      "mode": "manual"},
     {"label": "AUTO",        "mode": "auto"},
     {"label": "RETURN HOME", "mode": "return_home"},
-    {"label": "TRACE HOME",  "mode": "return_home_trace"},
+]
+
+CUP_BUTTONS = [
+    {"label": "LIGHT BLUE", "color_label": "light_blue", "color": (173, 216, 230)},
+    {"label": "PURPLE",     "color_label": "purple",     "color": (147, 0,   211)},
+    {"label": "GREEN",      "color_label": "green",      "color": (0,   200, 0  )},
 ]
 
 class ManualController:
@@ -54,11 +59,9 @@ class ManualController:
         self.video = VideoReceiver(host=pi_host)
         self.video.start()
 
-        # Servo state
         self.pan  = PAN_CENTER
         self.tilt = TILT_CENTER
 
-        # MQTT setup
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.client.on_connect = self._on_connect
         self.client.connect(broker_host, 1883)
@@ -96,6 +99,12 @@ class ManualController:
         self.current_mode = mode
         print(f"[controller] Mode → {mode}")
 
+    def _publish_cup_waypoint(self, color_label: str):
+        """Send car to a cup by color label — position tracker will fill in coordinates."""
+        payload = {"x": 0, "y": 0, "label": color_label, "timestamp": __import__('time').time()}
+        self.client.publish(LEADER_WAYPOINT, json.dumps(payload), qos=1)
+        print(f"[controller] Go to cup: {color_label}")
+
     def _clamp_pan(self, val):
         return max(PAN_MIN, min(PAN_MAX, val))
 
@@ -124,7 +133,7 @@ class ManualController:
         screen.blit(servo,    (20, 140))
         screen.blit(controls, (20, 190))
 
-        # Mode buttons
+        # Mode buttons — row 1
         button_w = (WINDOW_W - BUTTON_MARGIN * (len(BUTTONS) + 1)) // len(BUTTONS)
         for i, btn in enumerate(BUTTONS):
             x = BUTTON_MARGIN + i * (button_w + BUTTON_MARGIN)
@@ -134,6 +143,16 @@ class ManualController:
             pygame.draw.rect(screen, color, (x, y, button_w, BUTTON_HEIGHT), border_radius=6)
             label = font.render(btn["label"], True, (255, 255, 255))
             label_rect = label.get_rect(center=(x + button_w // 2, y + BUTTON_HEIGHT // 2))
+            screen.blit(label, label_rect)
+
+        # Cup buttons — row 2
+        cup_button_w = (WINDOW_W - BUTTON_MARGIN * (len(CUP_BUTTONS) + 1)) // len(CUP_BUTTONS)
+        for i, btn in enumerate(CUP_BUTTONS):
+            x = BUTTON_MARGIN + i * (cup_button_w + BUTTON_MARGIN)
+            y = 500 + BUTTON_MARGIN * 2 + BUTTON_HEIGHT
+            pygame.draw.rect(screen, btn["color"], (x, y, cup_button_w, BUTTON_HEIGHT), border_radius=6)
+            label = font.render(btn["label"], True, (0, 0, 0))
+            label_rect = label.get_rect(center=(x + cup_button_w // 2, y + BUTTON_HEIGHT // 2))
             screen.blit(label, label_rect)
 
         pygame.display.flip()
@@ -153,11 +172,20 @@ class ManualController:
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     mx, my = event.pos
                     button_w = (WINDOW_W - BUTTON_MARGIN * (len(BUTTONS) + 1)) // len(BUTTONS)
+                    # Mode buttons
                     for i, btn in enumerate(BUTTONS):
                         x = BUTTON_MARGIN + i * (button_w + BUTTON_MARGIN)
                         y = 500 + BUTTON_MARGIN
                         if x <= mx <= x + button_w and y <= my <= y + BUTTON_HEIGHT:
                             self._publish_mode(btn["mode"])
+
+                    # Cup buttons
+                    cup_button_w = (WINDOW_W - BUTTON_MARGIN * (len(CUP_BUTTONS) + 1)) // len(CUP_BUTTONS)
+                    for i, btn in enumerate(CUP_BUTTONS):
+                        x = BUTTON_MARGIN + i * (cup_button_w + BUTTON_MARGIN)
+                        y = 500 + BUTTON_MARGIN * 2 + BUTTON_HEIGHT
+                        if x <= mx <= x + cup_button_w and y <= my <= y + BUTTON_HEIGHT:
+                            self._publish_cup_waypoint(btn["color_label"])
 
                 elif event.type == pygame.KEYDOWN:
                     if event.key in VALID_KEYS:
