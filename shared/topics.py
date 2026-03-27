@@ -25,3 +25,5 @@ FOLLOWER_WAYPOINT = "cars/follower/waypoint"
 # System wide
 SYSTEM_MODE = "system/mode"           # "manual" or "autonomous"
 MANUAL_TARGET = "system/manual/target" # "leader" or "follower"
+
+CUP_POSITIONS = "cups/positions"

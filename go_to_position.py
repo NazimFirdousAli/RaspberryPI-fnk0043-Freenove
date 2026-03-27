@@ -55,6 +55,12 @@ class GoToPosition:
         if self.state == DONE:
             self._next_waypoint()
 
+    def update_current_target(self, x: float, y: float):
+        """Update current target in place for live tracking."""
+        if self.current_target:
+            label = self.current_target[2]
+            self.current_target = (x, y, label)
+
     def clear_waypoints(self):
         self.waypoints = []
         self.current_target = None

@@ -142,8 +142,13 @@ class CarLoop:
             x     = payload.get("x", 0)
             y     = payload.get("y", 0)
             label = payload.get("label", "")
-            self.go_to_position.add_waypoint(x, y, label)
-            self.current_mode = GO_TO_POSITION
+            update_only = payload.get("update_only", False)
+
+            if update_only:
+                self.go_to_position.update_current_target(x, y)
+            else:
+                self.go_to_position.add_waypoint(x, y, label)
+                self.current_mode = GO_TO_POSITION
         elif topic == SYSTEM_MODE:
             self.current_mode = payload.get("mode", MANUAL)
 
