@@ -6,25 +6,27 @@ from car_client import CarClient
 from shared.topics import SYSTEM_MODE
 from buzzer import Buzzer
 from odometry import Odometry
-from return_home import ReturnHome
-from return_home_trace import ReturnHomeTrace, PathLogger
 from go_to_position import GoToPosition
 
-MANUAL = "manual"
-AUTO = "auto"
-RETURN_HOME = "return_home"
-RETURN_HOME_TRACE = "return_home_trace"
+MANUAL         = "manual"
+AUTO           = "auto"
+RETURN_HOME    = "return_home"
 GO_TO_POSITION = "go_to_position"
 
-SPEED = 1000
+SPEED     = 1000
 MAX_SPEED = 4000
 
 BOUNDARY_MARGIN = 0.2
 SHEET_WIDTH_M   = 3.0
 SHEET_HEIGHT_M  = 1.5
-STUCK_TIME      = 2.0   # seconds before declaring stuck
-STUCK_THRESHOLD = 0.05  # meters — less than this means stuck
-STUCK_TURN_DURATION = 0.8  # seconds to turn when stuck
+
+# Home position — just inside left boundary, centered on y
+HOME_X = 0.2
+HOME_Y = SHEET_HEIGHT_M / 2
+
+STUCK_TIME          = 2.0
+STUCK_THRESHOLD     = 0.05
+STUCK_TURN_DURATION = 0.8
 
 LEFT_SCALE  = 1.2
 RIGHT_SCALE = 1.0
@@ -77,16 +79,12 @@ class CarLoop:
         self.running = True
         self.current_mode = MANUAL
         self.previous_mode = None
-        self.return_home = None
         self.current_keys = []
 
-        self.path_logger = PathLogger()
-        self.return_home_trace = None
-
         # Stuck detection state
-        self.stuck_check_start  = time.time()
-        self.stuck_check_pos    = (0.0, 0.0)
-        self.stuck_recovering   = False
+        self.stuck_check_start   = time.time()
+        self.stuck_check_pos     = (0.0, 0.0)
+        self.stuck_recovering    = False
         self.stuck_recover_start = time.time()
 
         self.odometry = Odometry()
@@ -169,43 +167,36 @@ class CarLoop:
 
     def _time_in_state(self) -> float:
         return time.time() - self.auto_state_start
-    
+
+    def _set_auto_state(self, state: str):
+        self.auto_state = state
+        self.auto_state_start = time.time()
+
     def _check_stuck(self) -> bool:
-        """Returns True if car is stuck and triggers recovery."""
-        # Only check if motors are running
         if self.current_FL == 0 and self.current_BL == 0 and \
-        self.current_FR == 0 and self.current_BR == 0:
-            # Reset timer when stopped
+           self.current_FR == 0 and self.current_BR == 0:
             self.stuck_check_start = time.time()
             pos = self.odometry.get_position()
             self.stuck_check_pos = (pos["x"], pos["y"])
             return False
 
-        # Check if enough time has passed
         if time.time() - self.stuck_check_start < STUCK_TIME:
             return False
 
-        # Check if position has changed
         pos = self.odometry.get_position()
         dx = pos["x"] - self.stuck_check_pos[0]
         dy = pos["y"] - self.stuck_check_pos[1]
         dist = math.sqrt(dx**2 + dy**2)
 
         if dist < STUCK_THRESHOLD:
-            print(f"[stuck] Car appears stuck at ({pos['x']:.3f}, {pos['y']:.3f}) — recovering")
-            # Reset timer and position for next check
+            print(f"[stuck] Stuck at ({pos['x']:.3f}, {pos['y']:.3f}) — recovering")
             self.stuck_check_start = time.time()
             self.stuck_check_pos = (pos["x"], pos["y"])
             return True
 
-        # Made progress — reset
         self.stuck_check_start = time.time()
         self.stuck_check_pos = (pos["x"], pos["y"])
         return False
-
-    def _set_auto_state(self, state: str):
-        self.auto_state = state
-        self.auto_state_start = time.time()
 
     def _near_boundary_ahead(self) -> bool:
         pos = self.odometry.get_position()
@@ -218,16 +209,6 @@ class CarLoop:
             look_x > SHEET_WIDTH_M or
             look_y < 0 or
             look_y > SHEET_HEIGHT_M
-        )
-
-    def _near_boundary(self) -> bool:
-        pos = self.odometry.get_position()
-        x, y = pos["x"], pos["y"]
-        return (
-            x < -BOUNDARY_MARGIN or
-            x > SHEET_WIDTH_M + BOUNDARY_MARGIN or
-            y < -BOUNDARY_MARGIN or
-            y > SHEET_HEIGHT_M + BOUNDARY_MARGIN
         )
 
     def get_accurate_distance(self) -> float:
@@ -256,13 +237,17 @@ class CarLoop:
                     self.center_servos()
                     self.auto_state = AUTO_FORWARD
                     self.previous_mode = self.current_mode
-                    self.return_home = None
-                    self.return_home_trace = None
                     self.stuck_recovering = False
-                    if old_mode == GO_TO_POSITION and self.current_mode != GO_TO_POSITION:
+                    # Return home — just add home as a waypoint
+                    if self.current_mode == RETURN_HOME:
+                        self.go_to_position.clear_waypoints()
+                        self.go_to_position.add_waypoint(HOME_X, HOME_Y, "home")
+                        self.current_mode = GO_TO_POSITION
+                    # Clear waypoints when leaving go_to_position
+                    elif old_mode == GO_TO_POSITION and self.current_mode != GO_TO_POSITION:
                         self.go_to_position.clear_waypoints()
 
-                # Stuck detection — only in autonomous modes
+                # Stuck detection
                 if self.current_mode != MANUAL and not self.stuck_recovering:
                     if self._check_stuck():
                         self.stuck_recovering = True
@@ -285,7 +270,6 @@ class CarLoop:
                 elif self.current_mode == MANUAL:
                     FL, BL, FR, BR = compute_motor_vector(self.current_keys)
                     self.set_motors(FL, BL, FR, BR)
-                    self.path_logger.record(FL, BL, FR, BR)
                     self.car.servo.set_servo_pwm('0', self.pan)
                     self.car.servo.set_servo_pwm('1', self.tilt)
                     self.buzzer.set_state(self.buzzer_state)
@@ -295,18 +279,15 @@ class CarLoop:
 
                     if self.auto_state == AUTO_FORWARD:
                         self.set_motors(SLOW_SPEED, SLOW_SPEED, SLOW_SPEED, SLOW_SPEED)
-                        self.path_logger.record(SLOW_SPEED, SLOW_SPEED, SLOW_SPEED, SLOW_SPEED)
                         if dist is not None and dist < SAFE_DISTANCE:
                             print(f"Obstacle at {dist:.1f}cm!")
                             self.set_motors(-900, -900, -900, -900)
-                            self.path_logger.record(-900, -900, -900, -900)
                             self._set_auto_state(AUTO_BRAKING)
 
                     elif self.auto_state == AUTO_BRAKING:
                         if self._time_in_state() >= BRAKE_DURATION:
                             self.set_motors(0, 0, 0, 0)
                             self.set_motors(-TURN_SPEED, -TURN_SPEED, TURN_SPEED, TURN_SPEED)
-                            self.path_logger.record(-TURN_SPEED, -TURN_SPEED, TURN_SPEED, TURN_SPEED)
                             self._set_auto_state(AUTO_TURNING)
 
                     elif self.auto_state == AUTO_TURNING:
@@ -324,36 +305,7 @@ class CarLoop:
                         self.current_mode = MANUAL
                         print("[car_loop] All waypoints reached, switching to manual")
 
-                elif self.current_mode == RETURN_HOME:
-                    if self.return_home is None:
-                        self.return_home = ReturnHome(
-                            motor=self.car.motor,
-                            sonic=self.car.sonic,
-                            odometry=self.odometry,
-                            set_motors_fn=self.set_motors,
-                            boundary_fn=self._near_boundary_ahead
-                        )
-                    done = self.return_home.update()
-                    if done:
-                        self.current_mode = MANUAL
-                        self.return_home = None
-                        print("[car_loop] Arrived home, switching to manual")
-
-                elif self.current_mode == RETURN_HOME_TRACE:
-                    if self.return_home_trace is None:
-                        self.return_home_trace = ReturnHomeTrace(
-                            motor=self.car.motor,
-                            sonic=self.car.sonic,
-                            path_logger=self.path_logger
-                        )
-                    done = self.return_home_trace.update()
-                    if done:
-                        self.current_mode = MANUAL
-                        self.return_home_trace = None
-                        self.path_logger.reset()
-                        print("[car_loop] Trace complete, switching to manual")
-
-                # Update odometry every iteration
+                # Update odometry
                 self.odometry.update(
                     self.current_FL,
                     self.current_BL,
@@ -361,7 +313,7 @@ class CarLoop:
                     self.current_BR
                 )
 
-                # Publish state every iteration
+                # Publish state
                 pos = self.odometry.get_position()
                 self.client.publish_state(
                     speed=self.current_FL,

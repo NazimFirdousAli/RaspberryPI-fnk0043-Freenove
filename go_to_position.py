@@ -7,7 +7,7 @@ from odometry import Odometry
 
 # Tuning
 RETURN_SPEED       = 1000
-TURN_SPEED         = 600
+TURN_SPEED         = 900
 ARRIVAL_THRESHOLD  = 0.15
 ANGLE_THRESHOLD    = 0.3
 SAFE_DISTANCE      = 30.0
