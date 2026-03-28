@@ -19,13 +19,22 @@ def make_buzzer(state: bool) -> dict:
         "state": state
     }
 
-def make_state(speed: float, heading: float, mode: str) -> dict:
+def make_state(speed: float, heading: float, mode: str, x: float = 0.0, y: float = 0.0) -> dict:
     return {
         "timestamp": time.time(),
         "speed": speed,
         "heading": heading,
-        "mode": mode
-        # position will be added here when SLAM is ready
+        "mode": mode,
+        "x": x,
+        "y": y
+    }
+
+def make_waypoint(x: float, y: float, label: str = "") -> dict:
+    return {
+        "timestamp": time.time(),
+        "x": x,
+        "y": y,
+        "label": label  # e.g. "green_cup", "home", "charging"
     }
 
 def make_mode(mode: str) -> dict:

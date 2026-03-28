@@ -14,7 +14,6 @@ class VideoReceiver:
         self.lock = threading.Lock()
         self.running = False
         self.thread = None
-        self.camera = Camera(stream_size=(640, 480))
 
     def start(self):
         self.running = True
@@ -32,24 +31,20 @@ class VideoReceiver:
             print("[video] Connected to stream")
 
             while self.running:
-                # Read frame length first
                 raw_len = self._recv_exact(sock, 4)
                 if not raw_len:
                     break
                 frame_len = struct.unpack('<I', raw_len)[0]
 
-                # Read the frame
                 raw_frame = self._recv_exact(sock, frame_len)
                 if not raw_frame:
                     break
 
-                # Decode JPEG to numpy array then to pygame surface
                 np_arr = np.frombuffer(raw_frame, dtype=np.uint8)
                 frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
                 if frame is None:
                     continue
 
-                # Convert BGR (OpenCV) to RGB (pygame)
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 surface = pygame.surfarray.make_surface(np.transpose(frame, (1, 0, 2)))
 
