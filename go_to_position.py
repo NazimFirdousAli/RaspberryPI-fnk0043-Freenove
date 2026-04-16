@@ -136,15 +136,20 @@ class GoToPosition:
     def _time_in_state(self) -> float:
         return time.time() - self.state_start
 
+    # def _get_distance(self) -> float:
+    #     if self._boundary_fn and self._boundary_fn():
+    #         return 10.0
+    #     readings = []
+    #     for _ in range(3):
+    #         d = self.sonic.get_distance()
+    #         if d is not None and d > 0:
+    #             readings.append(d)
+    #     return sum(readings) / len(readings) if readings else None
+
     def _get_distance(self) -> float:
         if self._boundary_fn and self._boundary_fn():
             return 10.0
-        readings = []
-        for _ in range(3):
-            d = self.sonic.get_distance()
-            if d is not None and d > 0:
-                readings.append(d)
-        return sum(readings) / len(readings) if readings else None
+        return None  # skip sonic — boundary check handles safety
 
     def _distance_to_target(self) -> float:
         if not self.current_target:
