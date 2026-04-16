@@ -21,6 +21,9 @@ ESCAPE_TURN_DURATION  = 1.2
 ESCAPE_DRIVE_DURATION = 1.5
 MAX_ATTEMPTS          = 3
 
+SLOWDOWN_DISTANCE = 0.5  # start slowing down when within 0.5m of target
+MIN_DRIVE_SPEED   = 400  # minimum drive speed — must overcome motor dead zone
+
 # States
 ROTATE_TO_TARGET    = "rotate_to_target"
 DRIVE_TO_TARGET     = "drive_to_target"
@@ -122,7 +125,6 @@ class GoToPosition:
             self._set_motors_fn(FL, BL, FR, BR)
         else:
             self.motor.set_motor_model(FL, BL, FR, BR)
-        self.odometry.update(FL, BL, FR, BR)
 
     def is_done(self) -> bool:
         return self.state == DONE and not self.waypoints
@@ -163,7 +165,11 @@ class GoToPosition:
                     self._set_motors(0, 0, 0, 0)
                     self._set_state(ROTATE_TO_TARGET)
                 else:
-                    self._set_motors(RETURN_SPEED, RETURN_SPEED, RETURN_SPEED, RETURN_SPEED)
+                    # Scale speed based on distance to target
+                    dist_to_target = self._distance_to_target()
+                    scale = min(1.0, dist_to_target / SLOWDOWN_DISTANCE)
+                    drive_speed = max(MIN_DRIVE_SPEED, int(RETURN_SPEED * scale))
+                    self._set_motors(drive_speed, drive_speed, drive_speed, drive_speed)
 
         elif self.state == PAUSING:
             if self._time_in_state() >= WAYPOINT_PAUSE:

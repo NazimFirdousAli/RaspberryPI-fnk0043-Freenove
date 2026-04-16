@@ -17,6 +17,8 @@ SHEET_HEIGHT_M = 1.5
 CAMERA_INDEX   = 0
 PUBLISH_RATE   = 0.033  # 30hz
 
+POSITION_SMOOTH_ALPHA = 0.3
+
 # Arrow HSV
 LEADER_COLOR_HSV = {
     "lower": np.array([0, 150, 0]),
@@ -187,6 +189,8 @@ class PositionTracker:
         self.cup_warning = ""
         self.cup_warning_time = 0
         self.tracking_cup = None
+        self.cup_positions_smoothed = {}
+
 
     def _on_connect(self, client, userdata, flags, rc, props):
         # Subscribe to waypoint requests so we can fill in cup coordinates
@@ -291,7 +295,16 @@ class PositionTracker:
                 if blob:
                     cx, cy = blob
                     x, y = pixel_to_meters(cx, cy, self.transform)
+
+                    # Exponential moving average smoothing
+                    if label in self.cup_positions_smoothed:
+                        prev_x, prev_y = self.cup_positions_smoothed[label]
+                        x = POSITION_SMOOTH_ALPHA * x + (1 - POSITION_SMOOTH_ALPHA) * prev_x
+                        y = POSITION_SMOOTH_ALPHA * y + (1 - POSITION_SMOOTH_ALPHA) * prev_y
+
+                    self.cup_positions_smoothed[label] = (x, y)
                     self.cup_positions[label] = (x, y)
+
                     draw_cup(debug, cx, cy, label, cfg["bgr"])
                     cups_updated = True
 
