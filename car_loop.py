@@ -119,8 +119,7 @@ class CarLoop:
     def handle_message(self, topic: str, payload: dict):
         if topic == self.client.cmd_topic:
             keys = payload.get("keys", [])
-            grace = time.time() - self.waypoint_received_time < WAYPOINT_GRACE_PERIOD
-            if keys and self.current_mode != MANUAL and not grace:
+            if keys and self.current_mode == AUTO:  # only interrupt AUTO, not GO_TO_POSITION
                 print("[car_loop] Manual input — interrupting auto mode")
                 self.current_mode = MANUAL
                 self.go_to_position.clear_waypoints()

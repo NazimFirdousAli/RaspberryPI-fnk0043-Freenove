@@ -27,7 +27,7 @@ MIN_DRIVE_SPEED   = 400
 
 # PID gains — tune these
 PID_KP = 800.0   # proportional — main turning force
-PID_KD = 200.0   # derivative — dampens overshoot
+PID_KD = 0   # derivative — dampens overshoot
 PID_KI = 0.0     # integral — leave at 0 until P and D are tuned
 
 # States
