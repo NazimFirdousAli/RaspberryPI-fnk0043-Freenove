@@ -7,7 +7,7 @@ from shared.topics import SYSTEM_MODE
 from buzzer import Buzzer
 from odometry import Odometry
 from go_to_position import GoToPosition
-from motion import MotionController, RAMP_STEP
+from motion import MotionController
 
 MANUAL         = "manual"
 AUTO           = "auto"
@@ -34,7 +34,8 @@ TURN_SPEED         = 1400
 BRAKE_DURATION     = 0.15
 TURN_DURATION      = 0.7
 STABILIZE_DURATION = 0.2
-WAYPOINT_GRACE_PERIOD = 1.0 
+
+WAYPOINT_GRACE_PERIOD = 1.0  # seconds to ignore manual interrupt after waypoint
 
 AUTO_FORWARD   = "forward"
 AUTO_BRAKING   = "braking"
@@ -80,11 +81,10 @@ class CarLoop:
         self.previous_mode = None
         self.current_keys  = []
 
-        self.waypoint_received_time = 0
+        self.waypoint_received_time = 0.0
 
         self.odometry = Odometry()
-
-        self.motion = MotionController(motor=self.car.motor)
+        self.motion   = MotionController(motor=self.car.motor)
 
         self.go_to_position = GoToPosition(
             motor=self.car.motor,
@@ -94,7 +94,6 @@ class CarLoop:
             boundary_fn=self._near_boundary_ahead
         )
 
-        # Stuck detection state
         self.stuck_check_start   = time.time()
         self.stuck_check_pos     = (0.0, 0.0)
         self.stuck_recovering    = False
@@ -117,24 +116,17 @@ class CarLoop:
         )
         print(f"[{car_id}] Car loop started in {self.current_mode} mode...")
 
-    # ------------------------------------------------------------------ #
-    #  Message handling                                                    #
-    # ------------------------------------------------------------------ #
-
     def handle_message(self, topic: str, payload: dict):
         if topic == self.client.cmd_topic:
             keys = payload.get("keys", [])
-            grace = time.time() - self.waypoint_received_time < WAYPOINT_GRACE_PERIOD
-            if keys and self.current_mode != MANUAL and not grace:
-                print("[car_loop] Manual input — interrupting auto mode")
-                self.current_mode = MANUAL
-                self.go_to_position.clear_waypoints()
-            self.current_keys = keys
+
         elif topic == self.client.servo_topic:
             self.pan  = payload.get("pan",  self.pan)
             self.tilt = payload.get("tilt", self.tilt)
+
         elif topic == self.client.buzzer_topic:
             self.buzzer_state = payload.get("state", False)
+
         elif topic == self.client.position_topic:
             x       = payload.get("x", self.odometry.x)
             y       = payload.get("y", self.odometry.y)
@@ -142,6 +134,7 @@ class CarLoop:
             self.odometry.x       = x
             self.odometry.y       = y
             self.odometry.heading = math.radians(heading)
+
         elif topic == self.client.waypoint_topic:
             x           = payload.get("x", 0)
             y           = payload.get("y", 0)
@@ -153,11 +146,9 @@ class CarLoop:
                 self.go_to_position.add_waypoint(x, y, label)
                 self.current_mode = GO_TO_POSITION
                 self.waypoint_received_time = time.time()
+
         elif topic == SYSTEM_MODE:
             self.current_mode = payload.get("mode", MANUAL)
-    # ------------------------------------------------------------------ #
-    #  Helpers                                                             #
-    # ------------------------------------------------------------------ #
 
     def center_servos(self):
         self.pan  = PAN_CENTER
@@ -222,15 +213,10 @@ class CarLoop:
             return 10.0
         return dist
 
-    # ------------------------------------------------------------------ #
-    #  Main loop                                                           #
-    # ------------------------------------------------------------------ #
-
     def run(self):
         try:
             while self.running:
 
-                # Mode change detection
                 if self.current_mode != self.previous_mode:
                     old_mode = self.previous_mode
                     print(f"[mode] {old_mode} → {self.current_mode}")
@@ -246,7 +232,6 @@ class CarLoop:
                     elif old_mode == GO_TO_POSITION and self.current_mode != GO_TO_POSITION:
                         self.go_to_position.clear_waypoints()
 
-                # Stuck detection
                 if self.current_mode != MANUAL and not self.stuck_recovering:
                     if self._check_stuck():
                         self.stuck_recovering    = True
@@ -254,8 +239,7 @@ class CarLoop:
                         self.motion.hard_stop()
                         time.sleep(0.1)
                         self.motion.set_motors(-TURN_SPEED, -TURN_SPEED, TURN_SPEED, TURN_SPEED)
-                
-                # Stuck recovery
+
                 if self.stuck_recovering:
                     if time.time() - self.stuck_recover_start >= STUCK_TURN_DURATION:
                         self.motion.hard_stop()
@@ -265,7 +249,6 @@ class CarLoop:
                         self.stuck_check_pos = (pos["x"], pos["y"])
                         print("[stuck] Recovery complete, resuming")
 
-                # Mode logic — skip if recovering
                 elif self.current_mode == MANUAL:
                     FL, BL, FR, BR = compute_motor_vector(self.current_keys)
                     self.motion.set_motors(FL, BL, FR, BR)
@@ -304,7 +287,6 @@ class CarLoop:
                         self.current_mode = MANUAL
                         print("[car_loop] All waypoints reached, switching to manual")
 
-                # Update odometry
                 self.odometry.update(
                     self.motion.current_FL,
                     self.motion.current_BL,
@@ -312,7 +294,6 @@ class CarLoop:
                     self.motion.current_BR
                 )
 
-                # Publish state
                 pos = self.odometry.get_position()
                 self.client.publish_state(
                     speed=self.motion.current_FL,
