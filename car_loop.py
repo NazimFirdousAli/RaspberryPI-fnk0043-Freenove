@@ -80,6 +80,9 @@ class CarLoop:
         self.current_keys  = []
         self.pending_clear = False
 
+        self.waypoint_received_time = 0
+        WAYPOINT_GRACE_PERIOD = 1.0 
+
         self.odometry = Odometry()
 
         self.motion = MotionController(motor=self.car.motor)
@@ -139,6 +142,7 @@ class CarLoop:
             self.odometry.x       = x
             self.odometry.y       = y
             self.odometry.heading = math.radians(heading)
+            
         elif topic == self.client.waypoint_topic:
             x           = payload.get("x", 0)
             y           = payload.get("y", 0)
@@ -148,10 +152,19 @@ class CarLoop:
             if update_only:
                 self.go_to_position.update_current_target(x, y)
             else:
-                if label == "click":
-                    self.pending_clear = True  # signal main loop to clear
+                self.pending_clear = label == "click"
                 self.go_to_position.add_waypoint(x, y, label)
                 self.current_mode = GO_TO_POSITION
+                self.waypoint_received_time = time.time()  # start grace period
+
+        elif topic == self.client.cmd_topic:
+            keys = payload.get("keys", [])
+            grace = time.time() - self.waypoint_received_time < WAYPOINT_GRACE_PERIOD
+            if keys and self.current_mode != MANUAL and not grace:
+                print("[car_loop] Manual input — interrupting auto mode")
+                self.current_mode = MANUAL
+                self.go_to_position.clear_waypoints()
+            self.current_keys = keys
 
         elif topic == SYSTEM_MODE:
             self.current_mode = payload.get("mode", MANUAL)
