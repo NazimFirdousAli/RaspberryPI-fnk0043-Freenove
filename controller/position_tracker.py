@@ -261,7 +261,7 @@ class PositionTracker:
                 if self.transform is not None:
                     wx, wy = pixel_to_meters(x, y, self.transform)
                     payload = make_waypoint(wx, wy, label="click")
-                    self.client.publish(LEADER_WAYPOINT, json.dumps(payload), qos=1)
+                    self.client.publish(LEADER_WAYPOINT, json.dumps(payload), qos=0)  # ← qos=0
                     print(f"[tracker] Waypoint sent: ({wx:.3f}, {wy:.3f})")
 
         cv2.setMouseCallback("Position Tracker", on_click)

@@ -1,7 +1,7 @@
 import math
 
 # Tuning constants
-RAMP_STEP       = 50
+RAMP_STEP       = 150
 MIN_MOTOR_SPEED = 350
 MAX_SPEED       = 4000
 LEFT_SCALE      = 1.2
