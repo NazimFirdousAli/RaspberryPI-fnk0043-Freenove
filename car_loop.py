@@ -152,8 +152,6 @@ class CarLoop:
             if update_only:
                 self.go_to_position.update_current_target(x, y)
             else:
-                if label == "click":
-                    self.go_to_position.clear_waypoints()
                 self.go_to_position.add_waypoint(x, y, label)
                 self.current_mode = GO_TO_POSITION
                 self.waypoint_received_time = time.time()
