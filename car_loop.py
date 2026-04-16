@@ -142,7 +142,7 @@ class CarLoop:
             self.odometry.x       = x
             self.odometry.y       = y
             self.odometry.heading = math.radians(heading)
-            
+
         elif topic == self.client.waypoint_topic:
             x           = payload.get("x", 0)
             y           = payload.get("y", 0)
@@ -152,10 +152,11 @@ class CarLoop:
             if update_only:
                 self.go_to_position.update_current_target(x, y)
             else:
-                self.pending_clear = label == "click"
+                if label == "click":
+                    self.go_to_position.clear_waypoints()
                 self.go_to_position.add_waypoint(x, y, label)
                 self.current_mode = GO_TO_POSITION
-                self.waypoint_received_time = time.time()  # start grace period
+                self.waypoint_received_time = time.time()
 
         elif topic == self.client.cmd_topic:
             keys = payload.get("keys", [])
@@ -269,10 +270,6 @@ class CarLoop:
                         time.sleep(0.1)
                         self.motion.set_motors(-TURN_SPEED, -TURN_SPEED, TURN_SPEED, TURN_SPEED)
                 
-                if self.pending_clear:
-                    self.go_to_position.clear_waypoints()
-                    self.pending_clear = False
-
                 # Stuck recovery
                 if self.stuck_recovering:
                     if time.time() - self.stuck_recover_start >= STUCK_TURN_DURATION:
