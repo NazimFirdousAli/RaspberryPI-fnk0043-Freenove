@@ -34,6 +34,7 @@ TURN_SPEED         = 1400
 BRAKE_DURATION     = 0.15
 TURN_DURATION      = 0.7
 STABILIZE_DURATION = 0.2
+WAYPOINT_GRACE_PERIOD = 1.0 
 
 AUTO_FORWARD   = "forward"
 AUTO_BRAKING   = "braking"
@@ -78,10 +79,8 @@ class CarLoop:
         self.current_mode  = MANUAL
         self.previous_mode = None
         self.current_keys  = []
-        self.pending_clear = False
 
         self.waypoint_received_time = 0
-        WAYPOINT_GRACE_PERIOD = 1.0 
 
         self.odometry = Odometry()
 
@@ -125,7 +124,8 @@ class CarLoop:
     def handle_message(self, topic: str, payload: dict):
         if topic == self.client.cmd_topic:
             keys = payload.get("keys", [])
-            if keys and self.current_mode != MANUAL:
+            grace = time.time() - self.waypoint_received_time < WAYPOINT_GRACE_PERIOD
+            if keys and self.current_mode != MANUAL and not grace:
                 print("[car_loop] Manual input — interrupting auto mode")
                 self.current_mode = MANUAL
                 self.go_to_position.clear_waypoints()
@@ -142,32 +142,19 @@ class CarLoop:
             self.odometry.x       = x
             self.odometry.y       = y
             self.odometry.heading = math.radians(heading)
-
         elif topic == self.client.waypoint_topic:
             x           = payload.get("x", 0)
             y           = payload.get("y", 0)
             label       = payload.get("label", "")
             update_only = payload.get("update_only", False)
-
             if update_only:
                 self.go_to_position.update_current_target(x, y)
             else:
                 self.go_to_position.add_waypoint(x, y, label)
                 self.current_mode = GO_TO_POSITION
                 self.waypoint_received_time = time.time()
-
-        elif topic == self.client.cmd_topic:
-            keys = payload.get("keys", [])
-            grace = time.time() - self.waypoint_received_time < WAYPOINT_GRACE_PERIOD
-            if keys and self.current_mode != MANUAL and not grace:
-                print("[car_loop] Manual input — interrupting auto mode")
-                self.current_mode = MANUAL
-                self.go_to_position.clear_waypoints()
-            self.current_keys = keys
-
         elif topic == SYSTEM_MODE:
             self.current_mode = payload.get("mode", MANUAL)
-
     # ------------------------------------------------------------------ #
     #  Helpers                                                             #
     # ------------------------------------------------------------------ #
