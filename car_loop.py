@@ -78,6 +78,7 @@ class CarLoop:
         self.current_mode  = MANUAL
         self.previous_mode = None
         self.current_keys  = []
+        self.pending_clear = False
 
         self.odometry = Odometry()
 
@@ -148,10 +149,10 @@ class CarLoop:
                 self.go_to_position.update_current_target(x, y)
             else:
                 if label == "click":
-                    # Clear current navigation and start fresh
-                    self.go_to_position.clear_waypoints()
+                    self.pending_clear = True  # signal main loop to clear
                 self.go_to_position.add_waypoint(x, y, label)
                 self.current_mode = GO_TO_POSITION
+
         elif topic == SYSTEM_MODE:
             self.current_mode = payload.get("mode", MANUAL)
 
@@ -254,6 +255,10 @@ class CarLoop:
                         self.motion.hard_stop()
                         time.sleep(0.1)
                         self.motion.set_motors(-TURN_SPEED, -TURN_SPEED, TURN_SPEED, TURN_SPEED)
+                
+                if self.pending_clear:
+                    self.go_to_position.clear_waypoints()
+                    self.pending_clear = False
 
                 # Stuck recovery
                 if self.stuck_recovering:
