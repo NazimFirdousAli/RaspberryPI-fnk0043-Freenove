@@ -238,7 +238,12 @@ class ManualController:
 
         # Clean up
         self.pressed_keys.clear()
-        self._publish_keys()
+        # Only publish keys if pygame window has focus
+        if pygame.key.get_focused():
+            self._publish_keys()
+        elif self.pressed_keys:
+            self.pressed_keys.clear()
+            self._publish_keys()
         self.client.disconnect()
         pygame.quit()
 
