@@ -169,6 +169,11 @@ class ManualController:
                 if event.type == pygame.QUIT:
                     self.running = False
 
+                elif event.type == pygame.WINDOWFOCUSLOST:
+                    self.pressed_keys.clear()
+                    self.servo_keys.clear()
+                    self._publish_keys()
+
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     mx, my = event.pos
                     button_w = (WINDOW_W - BUTTON_MARGIN * (len(BUTTONS) + 1)) // len(BUTTONS)
@@ -233,7 +238,12 @@ class ManualController:
 
         # Clean up
         self.pressed_keys.clear()
-        self._publish_keys()
+        # Only publish keys if pygame window has focus
+        if pygame.key.get_focused():
+            self._publish_keys()
+        elif self.pressed_keys:
+            self.pressed_keys.clear()
+            self._publish_keys()
         self.client.disconnect()
         pygame.quit()
 

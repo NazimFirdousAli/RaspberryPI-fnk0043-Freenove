@@ -7,6 +7,7 @@ from shared.topics import SYSTEM_MODE
 from buzzer import Buzzer
 from odometry import Odometry
 from go_to_position import GoToPosition
+from motion import MotionController
 
 MANUAL         = "manual"
 AUTO           = "auto"
@@ -20,7 +21,6 @@ BOUNDARY_MARGIN = 0.2
 SHEET_WIDTH_M   = 3.0
 SHEET_HEIGHT_M  = 1.5
 
-# Home position — just inside left boundary, centered on y
 HOME_X = 0.2
 HOME_Y = SHEET_HEIGHT_M / 2
 
@@ -28,15 +28,14 @@ STUCK_TIME          = 2.0
 STUCK_THRESHOLD     = 0.05
 STUCK_TURN_DURATION = 0.8
 
-LEFT_SCALE  = 1.2
-RIGHT_SCALE = 1.0
-
 SAFE_DISTANCE      = 40.0
 SLOW_SPEED         = 700
 TURN_SPEED         = 1400
 BRAKE_DURATION     = 0.15
 TURN_DURATION      = 0.7
 STABILIZE_DURATION = 0.2
+
+WAYPOINT_GRACE_PERIOD = 1.0  # seconds to ignore manual interrupt after waypoint
 
 AUTO_FORWARD   = "forward"
 AUTO_BRAKING   = "braking"
@@ -72,43 +71,42 @@ def compute_motor_vector(keys: list) -> tuple:
     clamp = lambda val: max(-MAX_SPEED, min(MAX_SPEED, val))
     return clamp(FL), clamp(BL), clamp(FR), clamp(BR)
 
+
 class CarLoop:
     def __init__(self, car_id: str, broker_host: str):
-        self.car = Car()
+        self.car    = Car()
         self.buzzer = Buzzer()
-        self.running = True
-        self.current_mode = MANUAL
+        self.running       = True
+        self.current_mode  = MANUAL
         self.previous_mode = None
-        self.current_keys = []
+        self.current_keys  = []
 
-        # Stuck detection state
-        self.stuck_check_start   = time.time()
-        self.stuck_check_pos     = (0.0, 0.0)
-        self.stuck_recovering    = False
-        self.stuck_recover_start = time.time()
+        self.waypoint_received_time = 0.0
 
         self.odometry = Odometry()
-        self.current_FL = 0
-        self.current_BL = 0
-        self.current_FR = 0
-        self.current_BR = 0
-
-        self.pan  = PAN_CENTER
-        self.tilt = TILT_CENTER
-        self.buzzer_state = False
-
-        self.car.servo.set_servo_pwm('0', PAN_CENTER)
-        self.car.servo.set_servo_pwm('1', TILT_CENTER)
+        self.motion   = MotionController(motor=self.car.motor)
 
         self.go_to_position = GoToPosition(
             motor=self.car.motor,
             sonic=self.car.sonic,
             odometry=self.odometry,
-            set_motors_fn=self.set_motors,
+            set_motors_fn=self.motion.set_motors,
             boundary_fn=self._near_boundary_ahead
         )
 
-        self.auto_state = AUTO_FORWARD
+        self.stuck_check_start   = time.time()
+        self.stuck_check_pos     = (0.0, 0.0)
+        self.stuck_recovering    = False
+        self.stuck_recover_start = time.time()
+
+        self.pan          = PAN_CENTER
+        self.tilt         = TILT_CENTER
+        self.buzzer_state = False
+
+        self.car.servo.set_servo_pwm('0', PAN_CENTER)
+        self.car.servo.set_servo_pwm('1', TILT_CENTER)
+
+        self.auto_state       = AUTO_FORWARD
         self.auto_state_start = time.time()
 
         self.client = CarClient(
@@ -121,16 +119,19 @@ class CarLoop:
     def handle_message(self, topic: str, payload: dict):
         if topic == self.client.cmd_topic:
             keys = payload.get("keys", [])
-            if keys and self.current_mode != MANUAL:
+            if keys and self.current_mode == AUTO:  # only interrupt AUTO, not GO_TO_POSITION
                 print("[car_loop] Manual input — interrupting auto mode")
                 self.current_mode = MANUAL
                 self.go_to_position.clear_waypoints()
             self.current_keys = keys
+
         elif topic == self.client.servo_topic:
             self.pan  = payload.get("pan",  self.pan)
             self.tilt = payload.get("tilt", self.tilt)
+
         elif topic == self.client.buzzer_topic:
             self.buzzer_state = payload.get("state", False)
+
         elif topic == self.client.position_topic:
             x       = payload.get("x", self.odometry.x)
             y       = payload.get("y", self.odometry.y)
@@ -138,31 +139,21 @@ class CarLoop:
             self.odometry.x       = x
             self.odometry.y       = y
             self.odometry.heading = math.radians(heading)
-        elif topic == self.client.waypoint_topic:
-            x     = payload.get("x", 0)
-            y     = payload.get("y", 0)
-            label = payload.get("label", "")
-            update_only = payload.get("update_only", False)
 
+        elif topic == self.client.waypoint_topic:
+            x           = payload.get("x", 0)
+            y           = payload.get("y", 0)
+            label       = payload.get("label", "")
+            update_only = payload.get("update_only", False)
             if update_only:
                 self.go_to_position.update_current_target(x, y)
             else:
                 self.go_to_position.add_waypoint(x, y, label)
                 self.current_mode = GO_TO_POSITION
+                self.waypoint_received_time = time.time()
+
         elif topic == SYSTEM_MODE:
             self.current_mode = payload.get("mode", MANUAL)
-
-    def set_motors(self, FL: int, BL: int, FR: int, BR: int):
-        clamp = lambda val: max(-MAX_SPEED, min(MAX_SPEED, val))
-        self.current_FL, self.current_BL, self.current_FR, self.current_BR = FL, BL, FR, BR
-        FL_corrected = clamp(int(FL * LEFT_SCALE))
-        BL_corrected = clamp(int(BL * LEFT_SCALE))
-        FR_corrected = clamp(int(FR * RIGHT_SCALE))
-        BR_corrected = clamp(int(BR * RIGHT_SCALE))
-        self.car.motor.set_motor_model(FL_corrected, BL_corrected, FR_corrected, BR_corrected)
-
-    def stop_motors(self):
-        self.set_motors(0, 0, 0, 0)
 
     def center_servos(self):
         self.pan  = PAN_CENTER
@@ -174,12 +165,12 @@ class CarLoop:
         return time.time() - self.auto_state_start
 
     def _set_auto_state(self, state: str):
-        self.auto_state = state
+        self.auto_state       = state
         self.auto_state_start = time.time()
 
     def _check_stuck(self) -> bool:
-        if self.current_FL == 0 and self.current_BL == 0 and \
-           self.current_FR == 0 and self.current_BR == 0:
+        if self.motion.current_FL == 0 and self.motion.current_BL == 0 and \
+           self.motion.current_FR == 0 and self.motion.current_BR == 0:
             self.stuck_check_start = time.time()
             pos = self.odometry.get_position()
             self.stuck_check_pos = (pos["x"], pos["y"])
@@ -191,9 +182,8 @@ class CarLoop:
         pos = self.odometry.get_position()
         dx = pos["x"] - self.stuck_check_pos[0]
         dy = pos["y"] - self.stuck_check_pos[1]
-        dist = math.sqrt(dx**2 + dy**2)
 
-        if dist < STUCK_THRESHOLD:
+        if math.sqrt(dx**2 + dy**2) < STUCK_THRESHOLD:
             print(f"[stuck] Stuck at ({pos['x']:.3f}, {pos['y']:.3f}) — recovering")
             self.stuck_check_start = time.time()
             self.stuck_check_pos = (pos["x"], pos["y"])
@@ -210,10 +200,8 @@ class CarLoop:
         look_x = x + math.cos(heading) * BOUNDARY_MARGIN
         look_y = y + math.sin(heading) * BOUNDARY_MARGIN
         return (
-            look_x < 0 or
-            look_x > SHEET_WIDTH_M or
-            look_y < 0 or
-            look_y > SHEET_HEIGHT_M
+            look_x < 0 or look_x > SHEET_WIDTH_M or
+            look_y < 0 or look_y > SHEET_HEIGHT_M
         )
 
     def get_accurate_distance(self) -> float:
@@ -234,47 +222,41 @@ class CarLoop:
         try:
             while self.running:
 
-                # Mode change detection
                 if self.current_mode != self.previous_mode:
                     old_mode = self.previous_mode
                     print(f"[mode] {old_mode} → {self.current_mode}")
-                    self.stop_motors()
+                    self.motion.hard_stop()
                     self.center_servos()
-                    self.auto_state = AUTO_FORWARD
+                    self.auto_state    = AUTO_FORWARD
                     self.previous_mode = self.current_mode
                     self.stuck_recovering = False
-                    # Return home — just add home as a waypoint
                     if self.current_mode == RETURN_HOME:
                         self.go_to_position.clear_waypoints()
                         self.go_to_position.add_waypoint(HOME_X, HOME_Y, "home")
                         self.current_mode = GO_TO_POSITION
-                    # Clear waypoints when leaving go_to_position
                     elif old_mode == GO_TO_POSITION and self.current_mode != GO_TO_POSITION:
                         self.go_to_position.clear_waypoints()
 
-                # Stuck detection
                 if self.current_mode != MANUAL and not self.stuck_recovering:
                     if self._check_stuck():
-                        self.stuck_recovering = True
+                        self.stuck_recovering    = True
                         self.stuck_recover_start = time.time()
-                        self.set_motors(0, 0, 0, 0)
+                        self.motion.hard_stop()
                         time.sleep(0.1)
-                        self.set_motors(-TURN_SPEED, -TURN_SPEED, TURN_SPEED, TURN_SPEED)
+                        self.motion.set_motors(-TURN_SPEED, -TURN_SPEED, TURN_SPEED, TURN_SPEED)
 
-                # Handle stuck recovery
                 if self.stuck_recovering:
                     if time.time() - self.stuck_recover_start >= STUCK_TURN_DURATION:
-                        self.set_motors(0, 0, 0, 0)
+                        self.motion.hard_stop()
                         self.stuck_recovering = False
                         self.stuck_check_start = time.time()
                         pos = self.odometry.get_position()
                         self.stuck_check_pos = (pos["x"], pos["y"])
                         print("[stuck] Recovery complete, resuming")
 
-                # Mode logic — skip if recovering
                 elif self.current_mode == MANUAL:
                     FL, BL, FR, BR = compute_motor_vector(self.current_keys)
-                    self.set_motors(FL, BL, FR, BR)
+                    self.motion.set_motors(FL, BL, FR, BR)
                     self.car.servo.set_servo_pwm('0', self.pan)
                     self.car.servo.set_servo_pwm('1', self.tilt)
                     self.buzzer.set_state(self.buzzer_state)
@@ -283,21 +265,21 @@ class CarLoop:
                     dist = self._effective_distance()
 
                     if self.auto_state == AUTO_FORWARD:
-                        self.set_motors(SLOW_SPEED, SLOW_SPEED, SLOW_SPEED, SLOW_SPEED)
+                        self.motion.set_motors(SLOW_SPEED, SLOW_SPEED, SLOW_SPEED, SLOW_SPEED)
                         if dist is not None and dist < SAFE_DISTANCE:
                             print(f"Obstacle at {dist:.1f}cm!")
-                            self.set_motors(-900, -900, -900, -900)
+                            self.motion.set_motors(-900, -900, -900, -900)
                             self._set_auto_state(AUTO_BRAKING)
 
                     elif self.auto_state == AUTO_BRAKING:
                         if self._time_in_state() >= BRAKE_DURATION:
-                            self.set_motors(0, 0, 0, 0)
-                            self.set_motors(-TURN_SPEED, -TURN_SPEED, TURN_SPEED, TURN_SPEED)
+                            self.motion.hard_stop()
+                            self.motion.set_motors(-TURN_SPEED, -TURN_SPEED, TURN_SPEED, TURN_SPEED)
                             self._set_auto_state(AUTO_TURNING)
 
                     elif self.auto_state == AUTO_TURNING:
                         if self._time_in_state() >= TURN_DURATION:
-                            self.set_motors(0, 0, 0, 0)
+                            self.motion.hard_stop()
                             self._set_auto_state(AUTO_STABILIZE)
 
                     elif self.auto_state == AUTO_STABILIZE:
@@ -310,18 +292,16 @@ class CarLoop:
                         self.current_mode = MANUAL
                         print("[car_loop] All waypoints reached, switching to manual")
 
-                # Update odometry
                 self.odometry.update(
-                    self.current_FL,
-                    self.current_BL,
-                    self.current_FR,
-                    self.current_BR
+                    self.motion.current_FL,
+                    self.motion.current_BL,
+                    self.motion.current_FR,
+                    self.motion.current_BR
                 )
 
-                # Publish state
                 pos = self.odometry.get_position()
                 self.client.publish_state(
-                    speed=self.current_FL,
+                    speed=self.motion.current_FL,
                     heading=pos["heading"],
                     mode=self.current_mode,
                     x=pos["x"],
@@ -333,14 +313,15 @@ class CarLoop:
         except KeyboardInterrupt:
             print("\nShutting down...")
         finally:
-            self.stop_motors()
+            self.motion.hard_stop()
             self.center_servos()
             self.buzzer.set_state(False)
             self.buzzer.close()
             self.car.close()
 
+
 if __name__ == "__main__":
-    car_id = sys.argv[1] if len(sys.argv) > 1 else "leader"
+    car_id      = sys.argv[1] if len(sys.argv) > 1 else "leader"
     broker_host = sys.argv[2] if len(sys.argv) > 2 else "localhost"
     loop = CarLoop(car_id=car_id, broker_host=broker_host)
     loop.run()
